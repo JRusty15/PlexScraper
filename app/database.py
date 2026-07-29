@@ -2,11 +2,16 @@ import os
 from datetime import datetime
 from enum import Enum
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Enum as SQLEnum, Text, Boolean
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./plex_verification.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

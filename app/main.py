@@ -121,49 +121,53 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
 @app.get("/api/files")
-def get_files(status: str | None = None, db: Session = Depends(get_db)):
+def get_files(status: str | None = None):
     """Retrieves all tracked media files."""
-    query = db.query(MediaFile)
-    if status:
-        query = query.filter(MediaFile.status == status)
-    files = query.all()
-    
-    result_list = []
-    for f in files:
-        # Get latest audit result
-        latest_res = db.query(AuditResult).filter(AuditResult.media_file_id == f.id).order_by(AuditResult.audited_at.desc()).first()
-        res_data = None
-        if latest_res:
-            res_data = {
-                "ffprobe_valid": latest_res.ffprobe_valid,
-                "duration_actual": latest_res.duration_actual,
-                "duration_variance": latest_res.duration_variance,
-                "video_codec": latest_res.video_codec,
-                "audio_codec": latest_res.audio_codec,
-                "container_format": latest_res.container_format,
-                "audio_tracks_info": latest_res.audio_tracks_info,
-                "vlm_title_verified": latest_res.vlm_title_verified,
-                "vlm_credits_verified": latest_res.vlm_credits_verified,
-                "vlm_sanity_check_passed": latest_res.vlm_sanity_check_passed,
-                "keyframes_paths": latest_res.keyframes_paths,
-                "detected_languages": latest_res.detected_languages,
-                "audio_transcript_snippet": latest_res.audio_transcript_snippet,
-                "audio_clips_paths": latest_res.audio_clips_paths,
-                "notes": latest_res.notes
-            }
-            
-        result_list.append({
-            "id": f.id,
-            "filepath": f.filepath,
-            "filename": f.filename,
-            "title": f.title,
-            "media_type": f.media_type,
-            "expected_duration": f.expected_duration,
-            "status": f.status,
-            "added_at": f.added_at,
-            "audit_result": res_data
-        })
-    return result_list
+    db = SessionLocal()
+    try:
+        query = db.query(MediaFile)
+        if status:
+            query = query.filter(MediaFile.status == status)
+        files = query.all()
+        
+        result_list = []
+        for f in files:
+            # Get latest audit result
+            latest_res = db.query(AuditResult).filter(AuditResult.media_file_id == f.id).order_by(AuditResult.audited_at.desc()).first()
+            res_data = None
+            if latest_res:
+                res_data = {
+                    "ffprobe_valid": latest_res.ffprobe_valid,
+                    "duration_actual": latest_res.duration_actual,
+                    "duration_variance": latest_res.duration_variance,
+                    "video_codec": latest_res.video_codec,
+                    "audio_codec": latest_res.audio_codec,
+                    "container_format": latest_res.container_format,
+                    "audio_tracks_info": latest_res.audio_tracks_info,
+                    "vlm_title_verified": latest_res.vlm_title_verified,
+                    "vlm_credits_verified": latest_res.vlm_credits_verified,
+                    "vlm_sanity_check_passed": latest_res.vlm_sanity_check_passed,
+                    "keyframes_paths": latest_res.keyframes_paths,
+                    "detected_languages": latest_res.detected_languages,
+                    "audio_transcript_snippet": latest_res.audio_transcript_snippet,
+                    "audio_clips_paths": latest_res.audio_clips_paths,
+                    "notes": latest_res.notes
+                }
+                
+            result_list.append({
+                "id": f.id,
+                "filepath": f.filepath,
+                "filename": f.filename,
+                "title": f.title,
+                "media_type": f.media_type,
+                "expected_duration": f.expected_duration,
+                "status": f.status,
+                "added_at": f.added_at,
+                "audit_result": res_data
+            })
+        return result_list
+    finally:
+        db.close()
 
 @app.post("/api/files/{file_id}/requeue")
 def requeue_file(file_id: int, db: Session = Depends(get_db)):
