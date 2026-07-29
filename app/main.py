@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 from pydantic import BaseModel
 
-from app.database import init_db, get_db, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
+from app.database import init_db, get_db, SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
 from app.queue_manager import worker
 from app.scanner import MediaScanner
 from app.plex_client import PlexClient
