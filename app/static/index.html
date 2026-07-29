@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexScraper Media Verification Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="app-container">
+        <!-- Sidebar / Header -->
+        <header class="navbar">
+            <div class="logo">
+                <span class="icon">🔍</span>
+                <h1>PlexScraper</h1>
+            </div>
+            <div class="pipeline-controls">
+                <span class="pipeline-badge" id="pipeline-status">Status: Idle</span>
+                <button class="btn btn-primary" id="btn-scan" onclick="triggerScan()">Scan Directories</button>
+                <button class="btn btn-secondary" id="btn-pause" onclick="togglePause()">Pause Queue</button>
+            </div>
+        </header>
+
+        <!-- Stats Section -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <p class="stat-label">Total Files Tracked</p>
+                <h3 class="stat-value" id="stat-total">0</h3>
+            </div>
+            <div class="stat-card verified">
+                <p class="stat-label">Verified Content</p>
+                <h3 class="stat-value" id="stat-verified">0</h3>
+            </div>
+            <div class="stat-card flagged">
+                <p class="stat-label">Flagged Issues</p>
+                <h3 class="stat-value" id="stat-flagged">0</h3>
+            </div>
+            <div class="stat-card pending">
+                <p class="stat-label">In Queue</p>
+                <h3 class="stat-value" id="stat-pending">0</h3>
+            </div>
+        </section>
+
+        <!-- Main Workspace -->
+        <main class="content-area">
+            <div class="card-header">
+                <h2>Media Inventory & Audit Logs</h2>
+                <div class="filters">
+                    <button class="filter-btn active" onclick="filterTable('all')">All</button>
+                    <button class="filter-btn" onclick="filterTable('VERIFIED')">Verified</button>
+                    <button class="filter-btn" onclick="filterTable('FLAGGED')">Flagged</button>
+                    <button class="filter-btn" onclick="filterTable('PENDING')">Queue</button>
+                </div>
+            </div>
+
+            <!-- Media Table -->
+            <div class="table-container">
+                <table class="media-table">
+                    <thead>
+                        <tr>
+                            <th>File Name</th>
+                            <th>Media Path</th>
+                            <th>Runtime (Plex/Actual)</th>
+                            <th>Status</th>
+                            <th>Last Audited</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="media-table-body">
+                        <!-- Content populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Details Modal -->
+    <div class="modal-backdrop" id="details-modal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-title">File Audit Verification Details</h3>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h4>Verification Summary</h4>
+                    <p id="modal-status-badge" class="badge"></p>
+                    <p id="modal-notes" class="modal-desc"></p>
+                </div>
+
+                <div class="modal-section">
+                    <h4>Structural Probe (FFprobe)</h4>
+                    <div class="metadata-grid">
+                        <div><strong>Container:</strong> <span id="meta-container">-</span></div>
+                        <div><strong>Video Codec:</strong> <span id="meta-vcodec">-</span></div>
+                        <div><strong>Audio Codec:</strong> <span id="meta-acodec">-</span></div>
+                        <div><strong>Variance:</strong> <span id="meta-variance">-</span></div>
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <h4>Keyframe Grid Samples (VLM Check)</h4>
+                    <div class="keyframe-grid" id="modal-keyframes">
+                        <!-- Keyframes injected here -->
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <h4>Audio & Language Audit (Whisper)</h4>
+                    <p><strong>Detected Language Track:</strong> <span id="audio-detected-lang">-</span></p>
+                    <div class="transcript-box">
+                        <h5>Audio Transcript Snippet</h5>
+                        <p id="audio-transcript" class="transcript-content"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let filesData = [];
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                document.getElementById('stat-total').innerText = data.total_files;
+                document.getElementById('stat-verified').innerText = data.verified_files;
+                document.getElementById('stat-flagged').innerText = data.flagged_files;
+                document.getElementById('stat-pending').innerText = data.pending_jobs_count;
+                
+                let statusText = "Status: Idle";
+                if (data.active_job) {
+                    statusText = `Status: Processing [${data.active_job.filename}]`;
+                } else if (data.is_paused) {
+                    statusText = "Status: Paused";
+                }
+                document.getElementById('pipeline-status').innerText = statusText;
+                
+                const pauseBtn = document.getElementById('btn-pause');
+                if (data.is_paused) {
+                    pauseBtn.innerText = "Resume Queue";
+                    pauseBtn.classList.remove('btn-secondary');
+                    pauseBtn.classList.add('btn-success');
+                } else {
+                    pauseBtn.innerText = "Pause Queue";
+                    pauseBtn.classList.remove('btn-success');
+                    pauseBtn.classList.add('btn-secondary');
+                }
+            } catch (err) {
+                console.error("Error fetching stats:", err);
+            }
+        }
+
+        async function fetchFiles() {
+            try {
+                const response = await fetch('/api/files');
+                filesData = await response.json();
+                renderTable(filesData);
+            } catch (err) {
+                console.error("Error fetching files:", err);
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('media-table-body');
+            tbody.innerHTML = '';
+            
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center">No media files discovered yet. Click "Scan Directories".</td></tr>`;
+                return;
+            }
+
+            data.forEach(file => {
+                const tr = document.createElement('tr');
+                
+                const expDuration = file.expected_duration ? `${Math.round(file.expected_duration)}s` : '-';
+                const actDuration = file.audit_result?.duration_actual ? `${Math.round(file.audit_result.duration_actual)}s` : '-';
+                
+                let statusBadge = `<span class="badge status-${file.status.toLowerCase()}">${file.status}</span>`;
+                
+                tr.innerHTML = `
+                    <td class="file-name">${file.filename}</td>
+                    <td class="file-path">${file.filepath}</td>
+                    <td>${expDuration} / ${actDuration}</td>
+                    <td>${statusBadge}</td>
+                    <td>${file.audit_result ? new Date(file.added_at).toLocaleDateString() : 'Never'}</td>
+                    <td>
+                        <button class="action-btn" onclick="viewDetails(${file.id})">Inspect</button>
+                        <button class="action-btn secondary" onclick="requeueFile(${file.id})">Queue</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterTable(status) {
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (status === 'all') {
+                renderTable(filesData);
+            } else if (status === 'FLAGGED') {
+                const filtered = filesData.filter(f => f.status.startsWith('FLAGGED'));
+                renderTable(filtered);
+            } else {
+                const filtered = filesData.filter(f => f.status === status);
+                renderTable(filtered);
+            }
+        }
+
+        async function triggerScan() {
+            const btn = document.getElementById('btn-scan');
+            btn.innerText = "Scanning...";
+            btn.disabled = true;
+            try {
+                await fetch('/api/pipeline/scan', { method: 'POST' });
+                await fetchFiles();
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+            } finally {
+                btn.innerText = "Scan Directories";
+                btn.disabled = false;
+            }
+        }
+
+        async function togglePause() {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+            const endpoint = data.is_paused ? '/api/pipeline/resume' : '/api/pipeline/pause';
+            await fetch(endpoint, { method: 'POST' });
+            await fetchStatus();
+        }
+
+        async function requeueFile(id) {
+            try {
+                await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
+                await fetchFiles();
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function viewDetails(id) {
+            const file = filesData.find(f => f.id === id);
+            if (!file) return;
+
+            document.getElementById('modal-title').innerText = file.filename;
+            
+            const badge = document.getElementById('modal-status-badge');
+            badge.innerText = file.status;
+            badge.className = `badge status-${file.status.toLowerCase()}`;
+            
+            document.getElementById('modal-notes').innerText = file.audit_result?.notes || "No audit details available.";
+            
+            if (file.audit_result) {
+                document.getElementById('meta-container').innerText = file.audit_result.container_format || '-';
+                document.getElementById('meta-vcodec').innerText = file.audit_result.video_codec || '-';
+                document.getElementById('meta-acodec').innerText = file.audit_result.audio_codec || '-';
+                
+                const variance = file.audit_result.duration_variance;
+                document.getElementById('meta-variance').innerText = variance !== null ? `${(variance * 100).toFixed(2)}%` : '-';
+                
+                // Keyframes
+                const kfContainer = document.getElementById('modal-keyframes');
+                kfContainer.innerHTML = '';
+                const paths = file.audit_result.keyframes_paths ? JSON.parse(file.audit_result.keyframes_paths) : [];
+                if (paths.length > 0) {
+                    paths.forEach(p => {
+                        const img = document.createElement('img');
+                        img.src = p;
+                        img.className = "keyframe-img";
+                        kfContainer.appendChild(img);
+                    });
+                } else {
+                    kfContainer.innerHTML = `<p class="modal-desc">No keyframes extracted.</p>`;
+                }
+
+                // Audio
+                document.getElementById('audio-detected-lang').innerText = file.audit_result.detected_languages || 'Unknown';
+                document.getElementById('audio-transcript').innerText = file.audit_result.audio_transcript_snippet || 'No transcript generated.';
+            } else {
+                document.getElementById('meta-container').innerText = '-';
+                document.getElementById('meta-vcodec').innerText = '-';
+                document.getElementById('meta-acodec').innerText = '-';
+                document.getElementById('meta-variance').innerText = '-';
+                document.getElementById('modal-keyframes').innerHTML = `<p class="modal-desc">Not audited yet.</p>`;
+                document.getElementById('audio-detected-lang').innerText = '-';
+                document.getElementById('audio-transcript').innerText = '';
+            }
+
+            document.getElementById('details-modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('details-modal').style.display = 'none';
+        }
+
+        // Poll stats
+        setInterval(fetchStatus, 3000);
+        setInterval(fetchFiles, 6000);
+
+        // Initial load
+        fetchStatus();
+        fetchFiles();
+    </script>
+</body>
+</html>

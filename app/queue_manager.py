@@ -1,0 +1,158 @@
+import asyncio
+import logging
+import json
+from datetime import datetime
+from sqlalchemy.orm import Session
+from app.database import SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
+from app.media_processor import MediaProcessor
+from app.ai_verifier import AIVerifier
+
+logger = logging.getLogger("queue_manager")
+
+class QueueWorker:
+    def __init__(self, workspace_root: str = "."):
+        self.workspace_root = workspace_root
+        self.processor = MediaProcessor(output_dir=f"{workspace_root}/processed_media")
+        self.verifier = AIVerifier(workspace_root=workspace_root)
+        self.is_running = False
+        self.is_paused = False
+        self._worker_task = None
+
+    def start(self):
+        """Starts the background queue processor worker."""
+        if not self.is_running:
+            self.is_running = True
+            self.is_paused = False
+            self._worker_task = asyncio.create_task(self._process_queue_loop())
+            logger.info("QueueWorker background task started.")
+
+    def stop(self):
+        """Stops the queue processor loop completely."""
+        if self.is_running:
+            self.is_running = False
+            if self._worker_task:
+                self._worker_task.cancel()
+            logger.info("QueueWorker background task stopped.")
+
+    def pause(self):
+        """Pauses processing new jobs, keeping current active job running."""
+        self.is_paused = True
+        logger.info("QueueWorker paused.")
+
+    def resume(self):
+        """Resumes queue processing."""
+        self.is_paused = False
+        logger.info("QueueWorker resumed.")
+
+    async def _process_queue_loop(self):
+        """Pulls and runs jobs sequentially from SQLite database."""
+        while self.is_running:
+            if self.is_paused:
+                await asyncio.sleep(1.0)
+                continue
+
+            db: Session = SessionLocal()
+            try:
+                # Find oldest PENDING audit job
+                job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).order_index = AuditJob.created_at.asc()
+                job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).order_by(AuditJob.created_at.asc()).first()
+                
+                if not job:
+                    await asyncio.sleep(2.0)
+                    continue
+
+                # Mark job as processing
+                job.status = JobStatus.PROCESSING
+                media_file = job.media_file
+                media_file.status = FileStatus.VERIFYING
+                db.commit()
+
+                logger.info(f"Processing Job #{job.id} for File: {media_file.filename}")
+                
+                # Perform the Audit
+                await self._run_audit_pipeline(db, media_file, job)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in queue loop: {e}")
+                await asyncio.sleep(2.0)
+            finally:
+                db.close()
+
+    async def _run_audit_pipeline(self, db: Session, media_file: MediaFile, job: AuditJob):
+        """Pipeline sequence: metadata probe, keyframe generation, audio extraction, AI validation."""
+        result = AuditResult(
+            media_file_id=media_file.id,
+            status=FileStatus.FAILED
+        )
+        
+        try:
+            # Stage 1: Parse and validate container structural info
+            meta = self.processor.parse_metadata(media_file.filepath)
+            result.ffprobe_valid = True
+            result.duration_actual = meta["duration"]
+            result.container_format = meta["container"]
+            result.video_codec = meta["video_codec"]
+            result.audio_codec = meta["audio_codec"]
+            result.audio_tracks_info = json.dumps(meta["audio_tracks"])
+            
+            # Check duration variance if we have expected duration from Plex/metadata
+            if media_file.expected_duration:
+                variance = abs(meta["duration"] - media_file.expected_duration) / media_file.expected_duration
+                result.duration_variance = variance
+                if variance > 0.05:
+                    result.status = FileStatus.FLAGGED_DURATION
+                    result.notes = f"Duration variance exceeds 5% (Expected: {media_file.expected_duration}s, Actual: {meta['duration']}s)"
+            
+            # Stage 2: Sampling and Extraction
+            logger.info("Extracting keyframes...")
+            kf_paths = self.processor.extract_keyframes(media_file.filepath, meta["duration"], media_file.id)
+            result.keyframes_paths = json.dumps(kf_paths)
+            
+            logger.info("Extracting audio clips...")
+            audio_paths = self.processor.extract_audio_clips(media_file.filepath, meta["duration"], media_file.id)
+            result.audio_clips_paths = json.dumps(audio_paths)
+
+            # Check if previous stages already flagged duration. If not, do VLM / Whisper checks.
+            if result.status != FileStatus.FLAGGED_DURATION:
+                logger.info("Running AI visual checks...")
+                vlm_res = await self.verifier.verify_visuals(kf_paths, media_file.title or media_file.filename)
+                result.vlm_title_verified = vlm_res["title_verified"]
+                result.vlm_credits_verified = vlm_res["credits_verified"]
+                result.vlm_sanity_check_passed = vlm_res["sanity_check_passed"]
+                result.vlm_raw_response = json.dumps(vlm_res["raw_logs"])
+                
+                logger.info("Running Speech LID language checks...")
+                audio_res = await self.verifier.transcribe_audio_and_identify_language(audio_paths)
+                result.detected_languages = ",".join(audio_res["languages"])
+                result.audio_transcript_snippet = audio_res["transcript"]
+                
+                # Flag Logic
+                if not vlm_res["title_verified"]:
+                    result.status = FileStatus.FLAGGED_TITLE
+                    result.notes = "Title card not verified in keyframes."
+                elif "en" not in audio_res["languages"]:
+                    result.status = FileStatus.FLAGGED_LANGUAGE
+                    result.notes = f"English audio check failed. Detected languages: {result.detected_languages}"
+                else:
+                    result.status = FileStatus.VERIFIED
+                    result.notes = "All verification steps passed successfully."
+                    
+            # Complete Job
+            job.status = JobStatus.COMPLETED
+            media_file.status = result.status
+            
+        except Exception as e:
+            logger.error(f"Audit pipeline failed for {media_file.filename}: {e}")
+            result.status = FileStatus.FLAGGED_CORRUPT
+            result.notes = f"Extraction or parsing failure: {str(e)}"
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            media_file.status = FileStatus.FLAGGED_CORRUPT
+            
+        db.add(result)
+        db.commit()
+
+# Single global worker instance reference
+worker = QueueWorker()

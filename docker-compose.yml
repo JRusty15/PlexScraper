@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  verifier:
+    build: .
+    container_name: plex-verifier
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:////app/data/plex_verification.db
+      - OLLAMA_API_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=qwen2.5-vl
+      # Edit these as appropriate or pass via env
+      - SCAN_PATHS=/media
+      - PLEX_URL=
+      - PLEX_TOKEN=
+    volumes:
+      - ./data:/app/data
+      - ./processed_media:/app/processed_media
+      # Mount your host media path (update this with your actual Plex media folders)
+      - ./media:/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # To enable CUDA GPU acceleration inside the container if Whisper or local models are loaded:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
