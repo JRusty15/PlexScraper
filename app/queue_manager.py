@@ -128,15 +128,22 @@ class QueueWorker:
                 result.audio_transcript_snippet = audio_res["transcript"]
                 
                 # Flag Logic
+                vlm_summary = ""
+                for log in vlm_res.get("raw_logs", []):
+                    stage_name = log.get("stage", "").upper()
+                    resp = log.get("response", {})
+                    reason_msg = resp.get("reason") or resp.get("raw_text_fallback") or json.dumps(resp)
+                    vlm_summary += f"[{stage_name}]: {reason_msg}. "
+                
                 if not vlm_res["title_verified"]:
                     result.status = FileStatus.FLAGGED_TITLE
-                    result.notes = "Title card not verified in keyframes."
+                    result.notes = f"Title card not verified. VLM details: {vlm_summary}"
                 elif "en" not in audio_res["languages"]:
                     result.status = FileStatus.FLAGGED_LANGUAGE
-                    result.notes = f"English audio check failed. Detected languages: {result.detected_languages}"
+                    result.notes = f"English audio check failed. Detected: {result.detected_languages}. VLM details: {vlm_summary}"
                 else:
                     result.status = FileStatus.VERIFIED
-                    result.notes = "All verification steps passed successfully."
+                    result.notes = f"All verification steps passed successfully. VLM details: {vlm_summary}"
                     
             # Complete Job
             job.status = JobStatus.COMPLETED

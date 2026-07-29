@@ -32,6 +32,7 @@ class AIVerifier:
 
     async def verify_visuals(self, keyframe_paths: list, expected_title: str) -> dict:
         """Runs Qwen2.5-VL via Ollama API to verify title cards, credits, and visual context."""
+        logger.info(f"=== AI Visual Verification Started for expected title: '{expected_title}' ===")
         results = {
             "title_verified": False,
             "credits_verified": False,
@@ -40,6 +41,7 @@ class AIVerifier:
         }
 
         if not keyframe_paths:
+            logger.warning("No keyframes found for visual check.")
             return results
 
         # 1. Title verification (typically 5% keyframe)
@@ -50,8 +52,9 @@ class AIVerifier:
                 f"Is the title '{expected_title}' displayed or visible on screen? "
                 f"Respond with a JSON object: {{\"title_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
             )
-            
+            logger.info("Sending Stage 1 (Title Check) prompt to Qwen2.5-VL...")
             title_resp = await self._query_ollama(prompt, img_b64)
+            logger.info(f"Stage 1 Response: {title_resp}")
             results["title_verified"] = title_resp.get("title_found", False)
             results["raw_logs"].append({"stage": "title", "response": title_resp})
         except Exception as e:
@@ -65,9 +68,11 @@ class AIVerifier:
                 prompt = (
                     "Analyze this image. It is from the end of a movie/show. "
                     "Are end credits, actor names, production logos, or scrolling credits visible on screen? "
-                    "Respond with a JSON object: {\"credits_found\": true/false, \"confidence\": 0.0-1.0}"
+                    "Respond with a JSON object: {\"credits_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}"
                 )
+                logger.info("Sending Stage 2 (Credits Check) prompt to Qwen2.5-VL...")
                 credits_resp = await self._query_ollama(prompt, img_b64)
+                logger.info(f"Stage 2 Response: {credits_resp}")
                 results["credits_verified"] = credits_resp.get("credits_found", False)
                 results["raw_logs"].append({"stage": "credits", "response": credits_resp})
         except Exception as e:
@@ -81,9 +86,11 @@ class AIVerifier:
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
                     f"media file titled '{expected_title}'? Answer with a JSON object: "
-                    f"{{\"content_matches\": true/false, \"description\": \"brief summary of the scene\"}}"
+                    f"{{\"content_matches\": true/false, \"description\": \"brief summary of the scene\", \"reason\": \"string\"}}"
                 )
+                logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64)
+                logger.info(f"Stage 3 Response: {sanity_resp}")
                 results["sanity_check_passed"] = sanity_resp.get("content_matches", False)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
         except Exception as e:
