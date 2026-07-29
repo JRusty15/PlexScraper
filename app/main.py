@@ -66,27 +66,30 @@ def shutdown_event():
 @app.get("/api/status")
 def get_service_status():
     """Gets general statistics and pipeline state."""
-    db = next(get_db())
-    total_files = db.query(MediaFile).count()
-    verified_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.VERIFIED).count()
-    flagged_files = db.query(MediaFile).filter(MediaFile.status.like("FLAGGED_%")).count()
-    pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
-    
-    current_job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).first()
-    active_filename = current_job.media_file.filename if current_job else None
+    db = SessionLocal()
+    try:
+        total_files = db.query(MediaFile).count()
+        verified_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.VERIFIED).count()
+        flagged_files = db.query(MediaFile).filter(MediaFile.status.like("FLAGGED_%")).count()
+        pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
+        
+        current_job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).first()
+        active_filename = current_job.media_file.filename if current_job else None
 
-    return {
-        "is_running": worker.is_running,
-        "is_paused": worker.is_paused,
-        "total_files": total_files,
-        "verified_files": verified_files,
-        "flagged_files": flagged_files,
-        "pending_jobs_count": pending_jobs,
-        "active_job": {
-            "id": current_job.id if current_job else None,
-            "filename": active_filename
-        } if current_job else None
-    }
+        return {
+            "is_running": worker.is_running,
+            "is_paused": worker.is_paused,
+            "total_files": total_files,
+            "verified_files": verified_files,
+            "flagged_files": flagged_files,
+            "pending_jobs_count": pending_jobs,
+            "active_job": {
+                "id": current_job.id if current_job else None,
+                "filename": active_filename
+            } if current_job else None
+        }
+    finally:
+        db.close()
 
 @app.post("/api/pipeline/pause")
 def pause_pipeline():

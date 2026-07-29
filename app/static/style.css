@@ -384,6 +384,19 @@ body {
     gap: 0.75rem;
 }
 
+.keyframe-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.keyframe-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
+    font-weight: 600;
+}
+
 .keyframe-img {
     width: 100%;
     aspect-ratio: 16/9;

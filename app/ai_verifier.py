@@ -103,8 +103,7 @@ class AIVerifier:
                     "images": [image_b64]
                 }
             ],
-            "stream": False,
-            "format": "json"
+            "stream": False
         }
         
         async with httpx.AsyncClient(timeout=45.0) as client:
@@ -113,8 +112,31 @@ class AIVerifier:
                 raise RuntimeError(f"Ollama API returned status {resp.status_code}: {resp.text}")
             
             data = resp.json()
-            content = data.get("message", {}).get("content", "{}")
-            return json.loads(content)
+            content = data.get("message", {}).get("content", "{}").strip()
+            
+            # Attempt to extract JSON from the response text
+            try:
+                # If wrapped in markdown blocks, strip them
+                if content.startswith("```json"):
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif content.startswith("```"):
+                    content = content.split("```")[1].split("```")[0].strip()
+                return json.loads(content)
+            except Exception:
+                # Fallback to simple regex/text detection if it is not valid JSON
+                logger.warning(f"Could not parse VLM response as JSON: {content}")
+                lower_content = content.lower()
+                
+                # Check for positive/negative keywords based on prompt target
+                is_positive = any(word in lower_content for word in ["yes", "true", "found", "verified", "matches", "present"])
+                return {
+                    "raw_text_fallback": content,
+                    "title_found": is_positive,
+                    "credits_found": is_positive,
+                    "content_matches": is_positive,
+                    "confidence": 0.5,
+                    "reason": content[:200]
+                }
 
     async def transcribe_audio_and_identify_language(self, audio_clip_paths: list) -> dict:
         """Transcribes audio clips using Whisper. 
