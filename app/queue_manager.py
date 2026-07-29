@@ -54,7 +54,6 @@ class QueueWorker:
             db: Session = SessionLocal()
             try:
                 # Find oldest PENDING audit job
-                job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).order_index = AuditJob.created_at.asc()
                 job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).order_by(AuditJob.created_at.asc()).first()
                 
                 if not job:
