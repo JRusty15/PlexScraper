@@ -49,6 +49,7 @@
             <div class="card-header">
                 <h2>Media Inventory & Audit Logs</h2>
                 <div class="filters">
+                    <input type="text" id="search-input" placeholder="Search files..." oninput="triggerSearch()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem;">
                     <button class="filter-btn active" onclick="filterTable('all')">All</button>
                     <button class="filter-btn" onclick="filterTable('VERIFIED')">Verified</button>
                     <button class="filter-btn" onclick="filterTable('FLAGGED')">Flagged</button>
@@ -73,6 +74,15 @@
                         <!-- Content populated dynamically -->
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Pagination Toolbar -->
+            <div class="pagination-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                <span id="pagination-info" style="font-size: 0.85rem; color: var(--text-secondary);">Showing 0 to 0 of 0 files</span>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary btn-sm" id="btn-prev" onclick="prevPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Previous</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-next" onclick="nextPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Next</button>
+                </div>
             </div>
         </main>
     </div>
@@ -122,6 +132,12 @@
 
     <script>
         let filesData = [];
+        let currentPage = 1;
+        const pageSize = 50;
+        let currentStatusFilter = 'all';
+        let currentSearchQuery = '';
+        let totalItemsCount = 0;
+        let searchTimeout = null;
 
         async function fetchStatus() {
             try {
@@ -158,9 +174,22 @@
 
         async function fetchFiles() {
             try {
-                const response = await fetch('/api/files');
-                filesData = await response.json();
+                let url = `/api/files?page=${currentPage}&page_size=${pageSize}`;
+                if (currentStatusFilter !== 'all') {
+                    url += `&status=${currentStatusFilter}`;
+                }
+                if (currentSearchQuery) {
+                    url += `&search=${encodeURIComponent(currentSearchQuery)}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                filesData = data.items || [];
+                totalItemsCount = data.total_items || 0;
+                
                 renderTable(filesData);
+                renderPagination();
             } catch (err) {
                 console.error("Error fetching files:", err);
             }
@@ -171,7 +200,7 @@
             tbody.innerHTML = '';
             
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center">No media files discovered yet. Click "Scan Directories".</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-secondary);">No media files match the filters.</td></tr>`;
                 return;
             }
 
@@ -184,8 +213,8 @@
                 let statusBadge = `<span class="badge status-${file.status.toLowerCase()}">${file.status}</span>`;
                 
                 tr.innerHTML = `
-                    <td class="file-name">${file.filename}</td>
-                    <td class="file-path">${file.filepath}</td>
+                    <td class="file-name" title="${file.filename}">${file.filename}</td>
+                    <td class="file-path" title="${file.filepath}">${file.filepath}</td>
                     <td>${expDuration} / ${actDuration}</td>
                     <td>${statusBadge}</td>
                     <td>${file.audit_result ? new Date(file.added_at).toLocaleDateString() : 'Never'}</td>
@@ -198,19 +227,57 @@
             });
         }
 
+        function renderPagination() {
+            const startIdx = (currentPage - 1) * pageSize + 1;
+            const endIdx = Math.min(currentPage * pageSize, totalItemsCount);
+            
+            const infoText = totalItemsCount > 0 
+                ? `Showing ${startIdx} to ${endIdx} of ${totalItemsCount} files`
+                : "Showing 0 to 0 of 0 files";
+                
+            document.getElementById('pagination-info').innerText = infoText;
+            
+            const btnPrev = document.getElementById('btn-prev');
+            const btnNext = document.getElementById('btn-next');
+            
+            btnPrev.disabled = (currentPage === 1);
+            btnNext.disabled = (currentPage * pageSize >= totalItemsCount);
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                fetchFiles();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage * pageSize < totalItemsCount) {
+                currentPage++;
+                fetchFiles();
+            }
+        }
+
+        function triggerSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentSearchQuery = document.getElementById('search-input').value.trim();
+                currentPage = 1; // reset page on search
+                fetchFiles();
+            }, 300); // 300ms debounce
+        }
+
         function filterTable(status) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-
-            if (status === 'all') {
-                renderTable(filesData);
-            } else if (status === 'FLAGGED') {
-                const filtered = filesData.filter(f => f.status.startsWith('FLAGGED'));
-                renderTable(filtered);
-            } else {
-                const filtered = filesData.filter(f => f.status === status);
-                renderTable(filtered);
+            
+            // Find active filter button element dynamically
+            if (event) {
+                event.target.classList.add('active');
             }
+            
+            currentStatusFilter = status;
+            currentPage = 1; // reset page
+            fetchFiles();
         }
 
         async function triggerScan() {

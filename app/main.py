@@ -121,14 +121,28 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
 @app.get("/api/files")
-def get_files(status: str | None = None):
-    """Retrieves all tracked media files."""
+def get_files(status: str | None = None, page: int = 1, page_size: int = 50, search: str | None = None):
+    """Retrieves tracked media files with pagination and search parameters."""
     db = SessionLocal()
     try:
         query = db.query(MediaFile)
+        
+        # Apply filters
         if status:
-            query = query.filter(MediaFile.status == status)
-        files = query.all()
+            if status.startswith("FLAGGED"):
+                query = query.filter(MediaFile.status.like("FLAGGED_%"))
+            else:
+                query = query.filter(MediaFile.status == status)
+                
+        if search:
+            query = query.filter(MediaFile.filename.like(f"%{search}%"))
+            
+        # Get total count for UI pagination details
+        total_count = query.count()
+        
+        # Apply pagination offsets
+        offset = (page - 1) * page_size
+        files = query.order_by(MediaFile.added_at.desc()).offset(offset).limit(page_size).all()
         
         result_list = []
         for f in files:
@@ -165,7 +179,13 @@ def get_files(status: str | None = None):
                 "added_at": f.added_at,
                 "audit_result": res_data
             })
-        return result_list
+            
+        return {
+            "total_items": total_count,
+            "page": page,
+            "page_size": page_size,
+            "items": result_list
+        }
     finally:
         db.close()
 
