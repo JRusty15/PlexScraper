@@ -183,6 +183,38 @@ def requeue_file(file_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"File {media_file.filename} requeued."}
 
+@app.post("/api/pipeline/nuke")
+def nuke_all_pipeline_data(db: Session = Depends(get_db)):
+    """Deletes all tracked files, jobs, results, and empties processing directories."""
+    # Temporarily stop worker before clearing
+    was_running = worker.is_running
+    worker.stop()
+    
+    try:
+        # Delete database records (Cascade takes care of relationships)
+        db.query(AuditJob).delete()
+        db.query(AuditResult).delete()
+        db.query(MediaFile).delete()
+        db.commit()
+        
+        # Remove physical files from keyframes and audio dirs
+        kf_dir = Path(WORKSPACE_ROOT) / "processed_media" / "keyframes"
+        audio_dir = Path(WORKSPACE_ROOT) / "processed_media" / "audio"
+        
+        for folder in [kf_dir, audio_dir]:
+            if folder.exists():
+                for item in folder.iterdir():
+                    if item.is_file():
+                        try:
+                            item.unlink()
+                        except Exception as e:
+                            logger.error(f"Error removing cached file {item}: {e}")
+                            
+        return {"message": "All pipeline database records and extracted assets have been deleted."}
+    finally:
+        if was_running:
+            worker.start()
+
 # Mount static folder for dashboard
 # Make sure to run this mount last so API endpoints take priority
 app.mount("/", StaticFiles(directory=str(app_static_path), html=True), name="static")

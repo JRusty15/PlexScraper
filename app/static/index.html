@@ -20,6 +20,7 @@
                 <span class="pipeline-badge" id="pipeline-status">Status: Idle</span>
                 <button class="btn btn-primary" id="btn-scan" onclick="triggerScan()">Scan Directories</button>
                 <button class="btn btn-secondary" id="btn-pause" onclick="togglePause()">Pause Queue</button>
+                <button class="btn btn-danger" onclick="nukePipeline()" style="background-color: var(--danger); color: white;">Nuke Queue</button>
             </div>
         </header>
 
@@ -239,6 +240,21 @@
         async function requeueFile(id) {
             try {
                 await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
+                await fetchFiles();
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function nukePipeline() {
+            if (!confirm("Are you absolutely sure you want to delete all tracked files, job queues, results history, and extracted assets? This cannot be undone.")) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/pipeline/nuke', { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
                 await fetchFiles();
                 await fetchStatus();
             } catch (err) {
