@@ -9,6 +9,7 @@
 </head>
 <body>
     <div class="glass-bg"></div>
+    <div id="toast-container" class="toast-container"></div>
     <div class="app-container">
         <!-- Sidebar / Header -->
         <header class="navbar">
@@ -16,75 +17,108 @@
                 <span class="icon">🔍</span>
                 <h1>PlexScraper</h1>
             </div>
+            <nav class="nav-links">
+                <button class="nav-link active" id="tab-dashboard" onclick="switchView('dashboard')">Dashboard</button>
+                <button class="nav-link" id="tab-settings" onclick="switchView('settings')">Settings</button>
+            </nav>
             <div class="pipeline-controls">
                 <span class="pipeline-badge" id="pipeline-status">Status: Idle</span>
                 <button class="btn btn-primary" id="btn-scan" onclick="triggerScan()">Scan Directories</button>
                 <button class="btn btn-secondary" id="btn-pause" onclick="togglePause()">Pause Queue</button>
-                <button class="btn btn-danger" onclick="nukePipeline()" style="background-color: var(--danger); color: white;">Nuke Queue</button>
             </div>
         </header>
 
-        <!-- Stats Section -->
-        <section class="stats-grid">
-            <div class="stat-card">
-                <p class="stat-label">Total Files Tracked</p>
-                <h3 class="stat-value" id="stat-total">0</h3>
-            </div>
-            <div class="stat-card verified">
-                <p class="stat-label">Verified Content</p>
-                <h3 class="stat-value" id="stat-verified">0</h3>
-            </div>
-            <div class="stat-card flagged">
-                <p class="stat-label">Flagged Issues</p>
-                <h3 class="stat-value" id="stat-flagged">0</h3>
-            </div>
-            <div class="stat-card pending">
-                <p class="stat-label">In Queue</p>
-                <h3 class="stat-value" id="stat-pending">0</h3>
-            </div>
-        </section>
-
-        <!-- Main Workspace -->
-        <main class="content-area">
-            <div class="card-header">
-                <h2>Media Inventory & Audit Logs</h2>
-                <div class="filters">
-                    <input type="text" id="search-input" placeholder="Search files..." oninput="triggerSearch()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem;">
-                    <button class="filter-btn active" onclick="filterTable('all')">All</button>
-                    <button class="filter-btn" onclick="filterTable('VERIFIED')">Verified</button>
-                    <button class="filter-btn" onclick="filterTable('FLAGGED')">Flagged</button>
-                    <button class="filter-btn" onclick="filterTable('PENDING')">Queue</button>
+        <!-- Dashboard View Pane -->
+        <div id="view-dashboard" class="view-pane active">
+            <!-- Stats Section -->
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <p class="stat-label">Total Files Tracked</p>
+                    <h3 class="stat-value" id="stat-total">0</h3>
                 </div>
-            </div>
-
-            <!-- Media Table -->
-            <div class="table-container">
-                <table class="media-table">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Media Path</th>
-                            <th>Runtime (Plex/Actual)</th>
-                            <th>Status</th>
-                            <th>Last Audited</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="media-table-body">
-                        <!-- Content populated dynamically -->
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Pagination Toolbar -->
-            <div class="pagination-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
-                <span id="pagination-info" style="font-size: 0.85rem; color: var(--text-secondary);">Showing 0 to 0 of 0 files</span>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary btn-sm" id="btn-prev" onclick="prevPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Previous</button>
-                    <button class="btn btn-secondary btn-sm" id="btn-next" onclick="nextPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Next</button>
+                <div class="stat-card verified">
+                    <p class="stat-label">Verified Content</p>
+                    <h3 class="stat-value" id="stat-verified">0</h3>
                 </div>
-            </div>
-        </main>
+                <div class="stat-card flagged">
+                    <p class="stat-label">Flagged Issues</p>
+                    <h3 class="stat-value" id="stat-flagged">0</h3>
+                </div>
+                <div class="stat-card pending">
+                    <p class="stat-label">In Queue</p>
+                    <h3 class="stat-value" id="stat-pending">0</h3>
+                </div>
+            </section>
+
+            <!-- Main Workspace -->
+            <main class="content-area">
+                <div class="card-header">
+                    <h2>Media Inventory & Audit Logs</h2>
+                    <div class="filters">
+                        <input type="text" id="search-input" placeholder="Search files..." oninput="triggerSearch()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem;">
+                        <button id="btn-filter-all" class="filter-btn active" onclick="filterTable(event, 'all')">All</button>
+                        <button id="btn-filter-VERIFIED" class="filter-btn" onclick="filterTable(event, 'VERIFIED')">Verified</button>
+                        <button id="btn-filter-FLAGGED" class="filter-btn" onclick="filterTable(event, 'FLAGGED')">Flagged</button>
+                        <button id="btn-filter-PENDING" class="filter-btn" onclick="filterTable(event, 'PENDING')">Queue</button>
+                    </div>
+                </div>
+
+                <!-- Media Table -->
+                <div class="table-container">
+                    <table class="media-table">
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Media Path</th>
+                                <th>Runtime (Plex/Actual)</th>
+                                <th>Status</th>
+                                <th>Last Audited</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="media-table-body">
+                            <!-- Content populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Toolbar -->
+                <div class="pagination-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                    <span id="pagination-info" style="font-size: 0.85rem; color: var(--text-secondary);">Showing 0 to 0 of 0 files</span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-secondary btn-sm" id="btn-prev" onclick="prevPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Previous</button>
+                        <button class="btn btn-secondary btn-sm" id="btn-next" onclick="nextPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Next</button>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Settings View Pane -->
+        <div id="view-settings" class="view-pane" style="display: none;">
+            <main class="content-area">
+                <div class="card-header">
+                    <h2>System Settings</h2>
+                </div>
+                
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <div>
+                            <h3>Reset & Re-run Queue</h3>
+                            <p class="settings-desc">Deletes all previous audit logs, deletes job histories, clears extracted keyframes/audio, and marks all current files as <strong>Pending</strong>. This lets you re-run the entire verification queue without rescanning the filesystem.</p>
+                        </div>
+                        <button class="btn btn-warning" onclick="nukeQueue()" style="color: white; margin-top: 1rem; width: fit-content;">Nuke Queue & Reset</button>
+                    </div>
+
+                    <div class="settings-card danger-zone">
+                        <div>
+                            <h3>Complete Clean Slate</h3>
+                            <p class="settings-desc">Wipes all scanned media files, all job queues, all result histories, and deletes all keyframe/audio files. The system will be completely empty until you run a new directory scan.</p>
+                        </div>
+                        <button class="btn btn-danger" onclick="nukeDatabase()" style="color: white; margin-top: 1rem; width: fit-content;">Nuke Database (Full Wipe)</button>
+                    </div>
+                </div>
+            </main>
+        </div>
     </div>
 
     <!-- Details Modal -->
@@ -138,6 +172,53 @@
         let currentSearchQuery = '';
         let totalItemsCount = 0;
         let searchTimeout = null;
+        let currentView = 'dashboard';
+
+        function loadStateFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            
+            currentView = params.get('view') || 'dashboard';
+            currentStatusFilter = params.get('status') || 'all';
+            
+            const pageParam = params.get('page');
+            currentPage = pageParam ? parseInt(pageParam, 10) : 1;
+            if (isNaN(currentPage) || currentPage < 1) {
+                currentPage = 1;
+            }
+            
+            currentSearchQuery = params.get('search') || '';
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.value = currentSearchQuery;
+            }
+            
+            // Set active class on the corresponding filter button
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            const filterBtn = document.getElementById(`btn-filter-${currentStatusFilter}`);
+            if (filterBtn) {
+                filterBtn.classList.add('active');
+            }
+        }
+
+        function updateURL() {
+            const params = new URLSearchParams();
+            if (currentView !== 'dashboard') {
+                params.set('view', currentView);
+            }
+            if (currentStatusFilter !== 'all') {
+                params.set('status', currentStatusFilter);
+            }
+            if (currentPage !== 1) {
+                params.set('page', currentPage);
+            }
+            if (currentSearchQuery) {
+                params.set('search', currentSearchQuery);
+            }
+            
+            const newSearch = params.toString();
+            const newURL = window.location.pathname + (newSearch ? '?' + newSearch : '');
+            window.history.replaceState(null, '', newURL);
+        }
 
         async function fetchStatus() {
             try {
@@ -174,6 +255,7 @@
 
         async function fetchFiles() {
             try {
+                renderSkeletonTable();
                 let url = `/api/files?page=${currentPage}&page_size=${pageSize}`;
                 if (currentStatusFilter !== 'all') {
                     url += `&status=${currentStatusFilter}`;
@@ -192,6 +274,30 @@
                 renderPagination();
             } catch (err) {
                 console.error("Error fetching files:", err);
+                showToast("Failed to fetch media inventory.", 'error');
+            }
+        }
+
+        function renderSkeletonTable() {
+            const tbody = document.getElementById('media-table-body');
+            tbody.innerHTML = '';
+            for (let i = 0; i < 5; i++) {
+                const tr = document.createElement('tr');
+                tr.className = 'skeleton-row';
+                tr.innerHTML = `
+                    <td data-label="File Name"><div class="skeleton skeleton-text"></div></td>
+                    <td data-label="Media Path"><div class="skeleton skeleton-text" style="width: 80%;"></div></td>
+                    <td data-label="Runtime (Plex/Actual)"><div class="skeleton skeleton-text" style="width: 40%;"></div></td>
+                    <td data-label="Status"><div class="skeleton skeleton-badge"></div></td>
+                    <td data-label="Last Audited"><div class="skeleton skeleton-text" style="width: 50%;"></div></td>
+                    <td data-label="Actions">
+                        <div style="display: flex; gap: 0.5rem;">
+                            <div class="skeleton skeleton-button"></div>
+                            <div class="skeleton skeleton-button"></div>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
             }
         }
 
@@ -213,12 +319,12 @@
                 let statusBadge = `<span class="badge status-${file.status.toLowerCase()}">${file.status}</span>`;
                 
                 tr.innerHTML = `
-                    <td class="file-name" title="${file.filename}">${file.filename}</td>
-                    <td class="file-path" title="${file.filepath}">${file.filepath}</td>
-                    <td>${expDuration} / ${actDuration}</td>
-                    <td>${statusBadge}</td>
-                    <td>${file.audit_result ? new Date(file.added_at).toLocaleDateString() : 'Never'}</td>
-                    <td>
+                    <td class="file-name" title="${file.filename}" data-label="File Name">${file.filename}</td>
+                    <td class="file-path" title="${file.filepath}" data-label="Media Path">${file.filepath}</td>
+                    <td data-label="Runtime (Plex/Actual)">${expDuration} / ${actDuration}</td>
+                    <td data-label="Status">${statusBadge}</td>
+                    <td data-label="Last Audited">${file.audit_result ? new Date(file.added_at).toLocaleDateString() : 'Never'}</td>
+                    <td data-label="Actions">
                         <button class="action-btn" onclick="viewDetails(${file.id})">Inspect</button>
                         <button class="action-btn secondary" onclick="requeueFile(${file.id})">Queue</button>
                     </td>
@@ -247,6 +353,7 @@
         function prevPage() {
             if (currentPage > 1) {
                 currentPage--;
+                updateURL();
                 fetchFiles();
             }
         }
@@ -254,6 +361,7 @@
         function nextPage() {
             if (currentPage * pageSize < totalItemsCount) {
                 currentPage++;
+                updateURL();
                 fetchFiles();
             }
         }
@@ -263,70 +371,171 @@
             searchTimeout = setTimeout(() => {
                 currentSearchQuery = document.getElementById('search-input').value.trim();
                 currentPage = 1; // reset page on search
+                updateURL();
                 fetchFiles();
             }, 300); // 300ms debounce
         }
 
-        function filterTable(status) {
+        function filterTable(evt, status) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
             
-            // Find active filter button element dynamically
-            if (event) {
-                event.target.classList.add('active');
+            if (evt && evt.target) {
+                evt.target.classList.add('active');
+            } else {
+                const btn = document.getElementById(`btn-filter-${status}`);
+                if (btn) btn.classList.add('active');
             }
             
             currentStatusFilter = status;
             currentPage = 1; // reset page
+            updateURL();
             fetchFiles();
         }
 
         async function triggerScan() {
             const btn = document.getElementById('btn-scan');
-            btn.innerText = "Scanning...";
+            const originalText = btn.innerText;
+            btn.innerHTML = `<span class="spinner-btn"></span> Scanning...`;
             btn.disabled = true;
             try {
-                await fetch('/api/pipeline/scan', { method: 'POST' });
+                const response = await fetch('/api/pipeline/scan', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "Scan started successfully.", 'success');
                 await fetchFiles();
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
+                showToast("Failed to start filesystem scan.", 'error');
             } finally {
-                btn.innerText = "Scan Directories";
+                btn.innerText = originalText;
                 btn.disabled = false;
             }
         }
 
         async function togglePause() {
-            const response = await fetch('/api/status');
-            const data = await response.json();
-            const endpoint = data.is_paused ? '/api/pipeline/resume' : '/api/pipeline/pause';
-            await fetch(endpoint, { method: 'POST' });
-            await fetchStatus();
+            const btn = document.getElementById('btn-pause');
+            const originalText = btn.innerText;
+            btn.innerHTML = `<span class="spinner-btn"></span> Updating...`;
+            btn.disabled = true;
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                const endpoint = data.is_paused ? '/api/pipeline/resume' : '/api/pipeline/pause';
+                const res = await fetch(endpoint, { method: 'POST' });
+                const resData = await res.json();
+                showToast(resData.message || "Queue state changed.", 'success');
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to update queue state.", 'error');
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         async function requeueFile(id) {
             try {
-                await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
+                const response = await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "File requeued.", 'success');
                 await fetchFiles();
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
+                showToast("Failed to requeue file.", 'error');
             }
         }
 
-        async function nukePipeline() {
-            if (!confirm("Are you absolutely sure you want to delete all tracked files, job queues, results history, and extracted assets? This cannot be undone.")) {
+        function switchView(viewName) {
+            currentView = viewName;
+            updateURL();
+            
+            // Remove active class from all tabs and panes
+            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.view-pane').forEach(pane => {
+                pane.classList.remove('active');
+                pane.style.display = 'none';
+            });
+            
+            // Set active classes
+            if (viewName === 'dashboard') {
+                const tab = document.getElementById('tab-dashboard');
+                if (tab) tab.classList.add('active');
+                const pane = document.getElementById('view-dashboard');
+                if (pane) {
+                    pane.classList.add('active');
+                    pane.style.display = 'block';
+                }
+            } else if (viewName === 'settings') {
+                const tab = document.getElementById('tab-settings');
+                if (tab) tab.classList.add('active');
+                const pane = document.getElementById('view-settings');
+                if (pane) {
+                    pane.classList.add('active');
+                    pane.style.display = 'block';
+                }
+            }
+        }
+
+        async function nukeQueue() {
+            if (!confirm("Are you absolutely sure you want to delete all job queues, audit results, and physical files, resetting all files back to pending? This will not delete the files list itself.")) {
                 return;
             }
             try {
-                const response = await fetch('/api/pipeline/nuke', { method: 'POST' });
+                showToast("Resetting queue and wiping results...", 'warning');
+                const response = await fetch('/api/pipeline/nuke/queue', { method: 'POST' });
                 const data = await response.json();
-                alert(data.message);
+                showToast(data.message || "Queue reset complete.", 'success');
                 await fetchFiles();
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
+                showToast("Failed to reset queue.", 'error');
             }
+        }
+
+        async function nukeDatabase() {
+            if (!confirm("Are you absolutely sure you want to drop the entire database (delete all media files, jobs, audit results) and clear assets? This cannot be undone.")) {
+                return;
+            }
+            try {
+                showToast("Dropping all database tables...", 'error');
+                const response = await fetch('/api/pipeline/nuke/database', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "Full database wipe completed.", 'success');
+                await fetchFiles();
+                await fetchStatus();
+                // Switch back to dashboard view after complete wipe
+                switchView('dashboard');
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to nuke database.", 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            
+            let icon = 'ℹ️';
+            if (type === 'success') icon = '✅';
+            if (type === 'error') icon = '❌';
+            if (type === 'warning') icon = '⚠️';
+            
+            toast.innerHTML = `<span style="margin-right: 0.5rem;">${icon}</span> <span>${message}</span>`;
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Remove toast
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
         }
 
         function viewDetails(id) {
@@ -422,6 +631,8 @@
         setInterval(fetchFiles, 6000);
 
         // Initial load
+        loadStateFromURL();
+        switchView(currentView);
         fetchStatus();
         fetchFiles();
     </script>

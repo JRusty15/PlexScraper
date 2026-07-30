@@ -17,6 +17,29 @@ class PlexClient:
             except Exception as e:
                 logger.error(f"Failed to connect to Plex Media Server: {e}")
 
+    def get_all_paths_mapping(self) -> dict:
+        """Queries all library items from Plex in a single pass to build a file path mapping."""
+        mapping = {}
+        if not self.server:
+            return mapping
+            
+        try:
+            logger.info("Building path-to-metadata mapping from Plex library...")
+            for section in self.server.library.sections():
+                for item in section.all():
+                    if item.type in ["movie", "episode"]:
+                        for media in item.media:
+                            for part in media.parts:
+                                if part.file:
+                                    norm_path = os.path.normpath(part.file)
+                                    duration_sec = media.duration / 1000.0 if media.duration else None
+                                    mapping[norm_path] = (duration_sec, item.ratingKey)
+            logger.info(f"Plex mapping complete. Mapped {len(mapping)} files.")
+        except Exception as e:
+            logger.error(f"Error mapping Plex files: {e}")
+            
+        return mapping
+
     def get_duration_and_rating_key(self, filepath: str) -> tuple:
         """Finds matching item in Plex libraries and returns expected duration (seconds) and ratingKey."""
         if not self.server:

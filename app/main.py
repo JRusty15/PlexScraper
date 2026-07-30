@@ -68,9 +68,23 @@ def get_service_status():
     """Gets general statistics and pipeline state."""
     db = SessionLocal()
     try:
-        total_files = db.query(MediaFile).count()
-        verified_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.VERIFIED).count()
-        flagged_files = db.query(MediaFile).filter(MediaFile.status.like("FLAGGED_%")).count()
+        from sqlalchemy import func
+        # Query counts grouped by status in one call
+        counts = db.query(MediaFile.status, func.count(MediaFile.id)).group_by(MediaFile.status).all()
+        counts_dict = {status: count for status, count in counts}
+        
+        total_files = sum(counts_dict.values())
+        verified_files = counts_dict.get(FileStatus.VERIFIED, 0)
+        
+        # Safely check for FLAGGED_ status
+        flagged_files = sum(
+            count for status, count in counts_dict.items() 
+            if status and (
+                (hasattr(status, "value") and status.value.startswith("FLAGGED_")) or
+                (isinstance(status, str) and status.startswith("FLAGGED_"))
+            )
+        )
+        
         pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
         
         current_job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).first()
@@ -111,12 +125,18 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
     # Enrich metadata from Plex if configured
     plex = PlexClient()
     new_media_records = db.query(MediaFile).filter(MediaFile.plex_rating_key == None).all()
-    for item in new_media_records:
-        duration, rating_key = plex.get_duration_and_rating_key(item.filepath)
-        if duration:
-            item.expected_duration = duration
-            item.plex_rating_key = rating_key
-    db.commit()
+    if new_media_records:
+        # Build path map in a single pass
+        import os
+        plex_map = plex.get_all_paths_mapping()
+        if plex_map:
+            for item in new_media_records:
+                norm_path = os.path.normpath(item.filepath)
+                if norm_path in plex_map:
+                    duration, rating_key = plex_map[norm_path]
+                    item.expected_duration = duration
+                    item.plex_rating_key = rating_key
+            db.commit()
 
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
@@ -145,9 +165,30 @@ def get_files(status: str | None = None, page: int = 1, page_size: int = 50, sea
         files = query.order_by(MediaFile.added_at.desc()).offset(offset).limit(page_size).all()
         
         result_list = []
+        if files:
+            file_ids = [f.id for f in files]
+            from sqlalchemy import func
+            
+            # Subquery to get max audited_at per media_file_id
+            subq = db.query(
+                AuditResult.media_file_id,
+                func.max(AuditResult.audited_at).label("max_audited_at")
+            ).filter(AuditResult.media_file_id.in_(file_ids)).group_by(AuditResult.media_file_id).subquery()
+            
+            # Join with the subquery to fetch the latest audit results
+            latest_results = db.query(AuditResult).join(
+                subq,
+                (AuditResult.media_file_id == subq.c.media_file_id) &
+                (AuditResult.audited_at == subq.c.max_audited_at)
+            ).all()
+            
+            # Map media_file_id to its latest result
+            results_map = {res.media_file_id: res for res in latest_results}
+        else:
+            results_map = {}
+            
         for f in files:
-            # Get latest audit result
-            latest_res = db.query(AuditResult).filter(AuditResult.media_file_id == f.id).order_by(AuditResult.audited_at.desc()).first()
+            latest_res = results_map.get(f.id)
             res_data = None
             if latest_res:
                 res_data = {
@@ -207,37 +248,68 @@ def requeue_file(file_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"File {media_file.filename} requeued."}
 
-@app.post("/api/pipeline/nuke")
-def nuke_all_pipeline_data(db: Session = Depends(get_db)):
-    """Deletes all tracked files, jobs, results, and empties processing directories."""
-    # Temporarily stop worker before clearing
+def clean_physical_assets():
+    # Remove physical files from keyframes and audio dirs
+    kf_dir = Path(WORKSPACE_ROOT) / "processed_media" / "keyframes"
+    audio_dir = Path(WORKSPACE_ROOT) / "processed_media" / "audio"
+    
+    for folder in [kf_dir, audio_dir]:
+        if folder.exists():
+            for item in folder.iterdir():
+                if item.is_file():
+                    try:
+                        item.unlink()
+                    except Exception as e:
+                        logger.error(f"Error removing cached file {item}: {e}")
+
+@app.post("/api/pipeline/nuke/queue")
+def nuke_queue_and_reset(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Deletes jobs, results, resets files to PENDING, recreates jobs, and cleans assets in background."""
     was_running = worker.is_running
     worker.stop()
-    
     try:
-        # Delete database records (Cascade takes care of relationships)
+        # Delete jobs and results
+        db.query(AuditJob).delete()
+        db.query(AuditResult).delete()
+        
+        # Reset media files to pending status
+        db.query(MediaFile).update({MediaFile.status: FileStatus.PENDING})
+        db.commit()
+        
+        # Recreate pending jobs for all media files in bulk
+        media_file_ids = [r[0] for r in db.query(MediaFile.id).all()]
+        if media_file_ids:
+            jobs = [AuditJob(media_file_id=mf_id, status=JobStatus.PENDING) for mf_id in media_file_ids]
+            db.bulk_save_objects(jobs)
+            db.commit()
+            
+        background_tasks.add_task(clean_physical_assets)
+        return {"message": f"Queue reset complete. Wiped results and re-queued {len(media_file_ids)} files."}
+    finally:
+        if was_running:
+            worker.start()
+
+@app.post("/api/pipeline/nuke/database")
+def nuke_database_full(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Deletes all media files, jobs, results, and triggers async asset deletion."""
+    was_running = worker.is_running
+    worker.stop()
+    try:
         db.query(AuditJob).delete()
         db.query(AuditResult).delete()
         db.query(MediaFile).delete()
         db.commit()
         
-        # Remove physical files from keyframes and audio dirs
-        kf_dir = Path(WORKSPACE_ROOT) / "processed_media" / "keyframes"
-        audio_dir = Path(WORKSPACE_ROOT) / "processed_media" / "audio"
-        
-        for folder in [kf_dir, audio_dir]:
-            if folder.exists():
-                for item in folder.iterdir():
-                    if item.is_file():
-                        try:
-                            item.unlink()
-                        except Exception as e:
-                            logger.error(f"Error removing cached file {item}: {e}")
-                            
-        return {"message": "All pipeline database records and extracted assets have been deleted."}
+        background_tasks.add_task(clean_physical_assets)
+        return {"message": "Full database wipe completed. All registered files and results deleted."}
     finally:
         if was_running:
             worker.start()
+
+@app.post("/api/pipeline/nuke")
+def nuke_all_pipeline_data(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Deprecated alias for nuke/database."""
+    return nuke_database_full(background_tasks, db)
 
 # Mount static folder for dashboard
 # Make sure to run this mount last so API endpoints take priority

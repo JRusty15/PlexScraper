@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Enum as SQLEnum, Text, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Enum as SQLEnum, Text, Boolean, event
 from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -12,6 +12,20 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=NullPool
 )
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    # Set WAL mode only if we are using SQLite
+    if "sqlite" in str(engine.url):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            pass
+        finally:
+            cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -42,8 +56,8 @@ class MediaFile(Base):
     plex_rating_key = Column(String, nullable=True) # ID from Plex
     media_type = Column(String, nullable=True)      # 'movie' or 'episode'
     expected_duration = Column(Float, nullable=True) # in seconds, from Plex/TMDB
-    added_at = Column(DateTime, default=datetime.utcnow)
-    status = Column(SQLEnum(FileStatus), default=FileStatus.PENDING)
+    added_at = Column(DateTime, default=datetime.utcnow, index=True)
+    status = Column(SQLEnum(FileStatus), default=FileStatus.PENDING, index=True)
     
     # Relationships
     results = relationship("AuditResult", back_populates="media_file", cascade="all, delete-orphan")
@@ -53,9 +67,9 @@ class AuditJob(Base):
     __tablename__ = "audit_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=False)
-    status = Column(SQLEnum(JobStatus), default=JobStatus.PENDING)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=False, index=True)
+    status = Column(SQLEnum(JobStatus), default=JobStatus.PENDING, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     error_message = Column(Text, nullable=True)
 
@@ -65,8 +79,8 @@ class AuditResult(Base):
     __tablename__ = "audit_results"
 
     id = Column(Integer, primary_key=True, index=True)
-    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=False)
-    audited_at = Column(DateTime, default=datetime.utcnow)
+    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=False, index=True)
+    audited_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Verification details
     ffprobe_valid = Column(Boolean, default=False)
@@ -99,6 +113,19 @@ class AuditResult(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    
+    # Ensure indexes exist for pre-existing databases
+    with engine.begin() as conn:
+        try:
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_media_files_status ON media_files(status)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_media_files_added_at ON media_files(added_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_jobs_media_file_id ON audit_jobs(media_file_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_jobs_status ON audit_jobs(status)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_jobs_created_at ON audit_jobs(created_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_results_media_file_id ON audit_results(media_file_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_results_audited_at ON audit_results(audited_at)")
+        except Exception:
+            pass
 
 def get_db():
     db = SessionLocal()
