@@ -343,6 +343,25 @@ def nuke_queue_and_reset(background_tasks: BackgroundTasks, db: Session = Depend
         if was_running:
             worker.start()
 
+@app.post("/api/pipeline/nuke/states")
+def clear_verification_states(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Wipes all audit logs, job history, sets files to PENDING, and stops the queue processor."""
+    worker.stop()
+    try:
+        # Delete jobs and results
+        db.query(AuditJob).delete()
+        db.query(AuditResult).delete()
+        
+        # Reset media files to pending status
+        db.query(MediaFile).update({MediaFile.status: FileStatus.PENDING})
+        db.commit()
+        
+        background_tasks.add_task(clean_physical_assets)
+        return {"message": "Verification states cleared. Queue paused and all files reset to pending."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear states: {str(e)}")
+
 @app.post("/api/pipeline/nuke/database")
 def nuke_database_full(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Deletes all media files, jobs, results, and triggers async asset deletion."""

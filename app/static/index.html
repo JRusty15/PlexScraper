@@ -110,6 +110,14 @@
                         <button class="btn btn-warning" onclick="nukeQueue()" style="color: white; margin-top: 1rem; width: fit-content;">Nuke Queue & Reset</button>
                     </div>
 
+                    <div class="settings-card">
+                        <div>
+                            <h3>Clear Verification States</h3>
+                            <p class="settings-desc">Wipes all verification results, audit logs, and deletes physical keyframes/audio, resetting all files back to <strong>Pending</strong>. This leaves the queue worker paused so you can manually manage scanning or strategy changes.</p>
+                        </div>
+                        <button class="btn btn-secondary" onclick="clearStates()" style="margin-top: 1rem; width: fit-content;">Clear States Only</button>
+                    </div>
+
                     <div class="settings-card danger-zone">
                         <div>
                             <h3>Complete Clean Slate</h3>
@@ -558,6 +566,23 @@
             } catch (err) {
                 console.error(err);
                 showToast("Failed to reset queue.", 'error');
+            }
+        }
+
+        async function clearStates() {
+            if (!confirm("Are you sure you want to clear all verification results, logs, and physical assets, resetting all files back to pending? This will pause the queue worker and will not delete your files list.")) {
+                return;
+            }
+            try {
+                showToast("Clearing verification states...", 'warning');
+                const response = await fetch('/api/pipeline/nuke/states', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "Verification states cleared.", 'success');
+                await fetchFiles(true);
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to clear verification states.", 'error');
             }
         }
 
