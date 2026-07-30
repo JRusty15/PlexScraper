@@ -253,9 +253,11 @@
             }
         }
 
-        async function fetchFiles() {
+        async function fetchFiles(showSkeleton = false) {
             try {
-                renderSkeletonTable();
+                if (showSkeleton) {
+                    renderSkeletonTable();
+                }
                 let url = `/api/files?page=${currentPage}&page_size=${pageSize}`;
                 if (currentStatusFilter !== 'all') {
                     url += `&status=${currentStatusFilter}`;
@@ -354,7 +356,7 @@
             if (currentPage > 1) {
                 currentPage--;
                 updateURL();
-                fetchFiles();
+                fetchFiles(true);
             }
         }
 
@@ -362,7 +364,7 @@
             if (currentPage * pageSize < totalItemsCount) {
                 currentPage++;
                 updateURL();
-                fetchFiles();
+                fetchFiles(true);
             }
         }
 
@@ -372,7 +374,7 @@
                 currentSearchQuery = document.getElementById('search-input').value.trim();
                 currentPage = 1; // reset page on search
                 updateURL();
-                fetchFiles();
+                fetchFiles(true);
             }, 300); // 300ms debounce
         }
 
@@ -389,7 +391,7 @@
             currentStatusFilter = status;
             currentPage = 1; // reset page
             updateURL();
-            fetchFiles();
+            fetchFiles(true);
         }
 
         async function triggerScan() {
@@ -401,7 +403,7 @@
                 const response = await fetch('/api/pipeline/scan', { method: 'POST' });
                 const data = await response.json();
                 showToast(data.message || "Scan started successfully.", 'success');
-                await fetchFiles();
+                await fetchFiles(true);
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
@@ -438,7 +440,7 @@
                 const response = await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
                 const data = await response.json();
                 showToast(data.message || "File requeued.", 'success');
-                await fetchFiles();
+                await fetchFiles(true);
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
@@ -486,7 +488,7 @@
                 const response = await fetch('/api/pipeline/nuke/queue', { method: 'POST' });
                 const data = await response.json();
                 showToast(data.message || "Queue reset complete.", 'success');
-                await fetchFiles();
+                await fetchFiles(true);
                 await fetchStatus();
             } catch (err) {
                 console.error(err);
@@ -503,7 +505,7 @@
                 const response = await fetch('/api/pipeline/nuke/database', { method: 'POST' });
                 const data = await response.json();
                 showToast(data.message || "Full database wipe completed.", 'success');
-                await fetchFiles();
+                await fetchFiles(true);
                 await fetchStatus();
                 // Switch back to dashboard view after complete wipe
                 switchView('dashboard');
@@ -634,7 +636,7 @@
         loadStateFromURL();
         switchView(currentView);
         fetchStatus();
-        fetchFiles();
+        fetchFiles(true);
     </script>
 </body>
 </html>
