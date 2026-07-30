@@ -206,6 +206,7 @@ def get_files(status: str | None = None, page: int = 1, page_size: int = 50, sea
                     "detected_languages": latest_res.detected_languages,
                     "audio_transcript_snippet": latest_res.audio_transcript_snippet,
                     "audio_clips_paths": latest_res.audio_clips_paths,
+                    "confidence_score": latest_res.confidence_score,
                     "notes": latest_res.notes
                 }
                 

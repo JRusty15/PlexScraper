@@ -107,6 +107,7 @@ class AuditResult(Base):
     
     # Final Result
     status = Column(SQLEnum(FileStatus), nullable=False)
+    confidence_score = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
 
     media_file = relationship("MediaFile", back_populates="results")
@@ -124,6 +125,12 @@ def init_db():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_jobs_created_at ON audit_jobs(created_at)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_results_media_file_id ON audit_results(media_file_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_audit_results_audited_at ON audit_results(audited_at)")
+            
+            # Migration: Add confidence_score column if it does not exist
+            try:
+                conn.exec_driver_sql("ALTER TABLE audit_results ADD COLUMN confidence_score INTEGER DEFAULT NULL")
+            except Exception:
+                pass
         except Exception:
             pass
 

@@ -121,6 +121,7 @@ class AIVerifier:
                     f"Respond with a JSON object:\n"
                     f"{{\n"
                     f"  \"content_matches\": true/false,\n"
+                    f"  \"confidence\": 0.0-1.0,\n"
                     f"  \"description\": \"brief summary of detected elements\",\n"
                     f"  \"reason\": \"explanation of why it matches or contradicts the expected title\"\n"
                     f"}}"
@@ -135,7 +136,7 @@ class AIVerifier:
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
                     f"media file titled '{expected_title}'? Answer with a JSON object: "
-                    f"{{\"content_matches\": true/false, \"description\": \"brief summary of the scene\", \"reason\": \"string\"}}"
+                    f"{{\"content_matches\": true/false, \"confidence\": 0.0-1.0, \"description\": \"brief summary of the scene\", \"reason\": \"string\"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64)

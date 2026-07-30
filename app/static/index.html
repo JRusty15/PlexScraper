@@ -72,6 +72,7 @@
                                 <th>Media Path</th>
                                 <th>Runtime (Plex/Actual)</th>
                                 <th>Status</th>
+                                <th>Confidence</th>
                                 <th>Last Audited</th>
                                 <th>Actions</th>
                             </tr>
@@ -131,7 +132,10 @@
             <div class="modal-body">
                 <div class="modal-section">
                     <h4>Verification Summary</h4>
-                    <p id="modal-status-badge" class="badge"></p>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                        <span id="modal-status-badge" class="badge"></span>
+                        <span id="modal-confidence-badge" class="badge"></span>
+                    </div>
                     <p id="modal-notes" class="modal-desc"></p>
                 </div>
 
@@ -291,6 +295,7 @@
                     <td data-label="Media Path"><div class="skeleton skeleton-text" style="width: 80%;"></div></td>
                     <td data-label="Runtime (Plex/Actual)"><div class="skeleton skeleton-text" style="width: 40%;"></div></td>
                     <td data-label="Status"><div class="skeleton skeleton-badge"></div></td>
+                    <td data-label="Confidence"><div class="skeleton skeleton-badge" style="width: 30%;"></div></td>
                     <td data-label="Last Audited"><div class="skeleton skeleton-text" style="width: 50%;"></div></td>
                     <td data-label="Actions">
                         <div style="display: flex; gap: 0.5rem;">
@@ -308,7 +313,7 @@
             tbody.innerHTML = '';
             
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-secondary);">No media files match the filters.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center" style="padding: 2rem; color: var(--text-secondary);">No media files match the filters.</td></tr>`;
                 return;
             }
 
@@ -320,11 +325,23 @@
                 
                 let statusBadge = `<span class="badge status-${file.status.toLowerCase()}">${file.status}</span>`;
                 
+                let confidenceBadge = '-';
+                if (file.audit_result && file.audit_result.confidence_score !== null) {
+                    const score = file.audit_result.confidence_score;
+                    let colorClass = 'status-pending';
+                    if (score >= 80) colorClass = 'status-verified';
+                    else if (score >= 60) colorClass = 'status-verifying';
+                    else colorClass = 'status-failed';
+                    
+                    confidenceBadge = `<span class="badge ${colorClass}" style="font-weight: 600;">${score}%</span>`;
+                }
+                
                 tr.innerHTML = `
                     <td class="file-name" title="${file.filename}" data-label="File Name">${file.filename}</td>
                     <td class="file-path" title="${file.filepath}" data-label="Media Path">${file.filepath}</td>
                     <td data-label="Runtime (Plex/Actual)">${expDuration} / ${actDuration}</td>
                     <td data-label="Status">${statusBadge}</td>
+                    <td data-label="Confidence">${confidenceBadge}</td>
                     <td data-label="Last Audited">${file.audit_result ? new Date(file.added_at).toLocaleDateString() : 'Never'}</td>
                     <td data-label="Actions">
                         <button class="action-btn" onclick="viewDetails(${file.id})">Inspect</button>
@@ -549,6 +566,20 @@
             const badge = document.getElementById('modal-status-badge');
             badge.innerText = file.status;
             badge.className = `badge status-${file.status.toLowerCase()}`;
+            
+            const confBadge = document.getElementById('modal-confidence-badge');
+            if (file.audit_result && file.audit_result.confidence_score !== null) {
+                const score = file.audit_result.confidence_score;
+                confBadge.innerText = `Confidence: ${score}%`;
+                let colorClass = 'status-pending';
+                if (score >= 80) colorClass = 'status-verified';
+                else if (score >= 60) colorClass = 'status-verifying';
+                else colorClass = 'status-failed';
+                confBadge.className = `badge ${colorClass}`;
+                confBadge.style.display = 'inline-block';
+            } else {
+                confBadge.style.display = 'none';
+            }
             
             document.getElementById('modal-notes').innerText = file.audit_result?.notes || "No audit details available.";
             

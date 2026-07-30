@@ -165,6 +165,9 @@ class QueueWorker:
                     notes_prefix = "All verification steps passed. " if vlm_res["title_verified"] else "Title card not verified, but visual sanity check passed. "
                     result.notes = f"{notes_prefix}VLM details: {vlm_summary}"
                     
+                # Calculate final confidence score
+                result.confidence_score = self._calculate_confidence(result, vlm_res, audio_res, media_file)
+                    
             # Complete Job
             job.status = JobStatus.COMPLETED
             media_file.status = result.status
@@ -173,12 +176,78 @@ class QueueWorker:
             logger.error(f"Audit pipeline failed for {media_file.filename}: {e}")
             result.status = FileStatus.FLAGGED_CORRUPT
             result.notes = f"Extraction or parsing failure: {str(e)}"
+            result.confidence_score = 0
             job.status = JobStatus.FAILED
             job.error_message = str(e)
             media_file.status = FileStatus.FLAGGED_CORRUPT
             
         db.add(result)
         db.commit()
+
+    def _calculate_confidence(self, result: AuditResult, vlm_res: dict, audio_res: dict, media_file: MediaFile) -> int:
+        """Calculates confidence score (0-100%) based on validation metrics."""
+        score = 0
+        
+        # 1. Integrity check (ffprobe) - 20 points
+        if result.ffprobe_valid:
+            score += 20
+        else:
+            return 0
+            
+        # 2. Duration check - 25 points
+        expected = media_file.expected_duration if media_file else None
+        if not expected:
+            score += 25
+        elif result.duration_variance is not None:
+            var = result.duration_variance
+            if var <= 0.01:
+                score += 25
+            elif var > 0.05:
+                score += 0
+            else:
+                score += int(25 * (1.0 - (var - 0.01) / 0.04))
+                
+        # 3. Visual Checks (Title or Sanity Check) - 35 points
+        title_found = vlm_res.get("title_verified", False)
+        sanity_passed = vlm_res.get("sanity_check_passed", False)
+        
+        # Get raw response objects for confidences
+        title_conf = 1.0
+        sanity_conf = 1.0
+        credits_conf = 1.0
+        
+        for log in vlm_res.get("raw_logs", []):
+            stage = log.get("stage", "")
+            resp = log.get("response", {})
+            conf = resp.get("confidence", 1.0)
+            try:
+                conf_val = float(conf)
+            except Exception:
+                conf_val = 1.0
+                
+            if stage == "title":
+                title_conf = conf_val
+            elif stage == "sanity":
+                sanity_conf = conf_val
+            elif stage == "credits":
+                credits_conf = conf_val
+                
+        if title_found:
+            score += int(35 * title_conf)
+        elif sanity_passed:
+            score += int(35 * sanity_conf)
+            
+        # 4. Credits Check - 10 points
+        credits_found = vlm_res.get("credits_verified", False)
+        if credits_found:
+            score += int(10 * credits_conf)
+            
+        # 5. Language Check - 10 points
+        languages = audio_res.get("languages", [])
+        if "en" in languages:
+            score += 10
+            
+        return max(0, min(100, score))
 
 # Single global worker instance reference
 worker = QueueWorker()
