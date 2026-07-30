@@ -64,3 +64,25 @@ class PlexClient:
             logger.error(f"Plex search error for {filepath}: {e}")
             
         return None, None
+
+    def get_metadata(self, rating_key: str) -> dict:
+        """Fetches detailed TMDB metadata from local Plex Server for verification guidance."""
+        meta = {
+            "summary": "",
+            "genres": [],
+            "roles": [],
+            "year": None
+        }
+        if not self.server or not rating_key:
+            return meta
+            
+        try:
+            item = self.server.fetchItem(int(rating_key))
+            meta["summary"] = getattr(item, "summary", "")
+            meta["genres"] = [g.tag for g in getattr(item, "genres", [])] if hasattr(item, "genres") else []
+            meta["roles"] = [r.tag for r in getattr(item, "roles", [])][:5] if hasattr(item, "roles") else []
+            meta["year"] = getattr(item, "year", None)
+        except Exception as e:
+            logger.error(f"Error fetching metadata for rating key {rating_key}: {e}")
+            
+        return meta

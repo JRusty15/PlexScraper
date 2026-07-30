@@ -574,8 +574,24 @@
                         img.className = "keyframe-img";
                         div.appendChild(img);
                         
-                        // Add label mapping (5%, 25%, 50%, 75%, 90%)
-                        const labels = ["5% (Title Check)", "25% (Content Check)", "50% (Midpoint)", "75% (Late Feature)", "90% (Credits Check)"];
+                        // Add label mapping (15 keyframes: 1%, 2%, 4%, 7%, 10%, 20%, 30%, 45%, 60%, 70%, 80%, 85%, 90%, 94%, 98%)
+                        const labels = [
+                            "1% (Intro)", 
+                            "2% (Intro)", 
+                            "4% (Title Check)", 
+                            "7% (Title Check)", 
+                            "10% (Title Check)", 
+                            "20% (Story Check)", 
+                            "30% (Story Check)", 
+                            "45% (Midpoint)", 
+                            "60% (Story Check)", 
+                            "70% (Story Check)", 
+                            "80% (Story Check)", 
+                            "85% (Credits Check)", 
+                            "90% (Credits Check)", 
+                            "94% (Credits Check)", 
+                            "98% (Credits Check)"
+                        ];
                         const labelEl = document.createElement('div');
                         labelEl.className = "keyframe-label";
                         labelEl.innerText = labels[idx] || "Sample Frame";

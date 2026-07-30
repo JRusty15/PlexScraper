@@ -30,7 +30,7 @@ class AIVerifier:
         with open(local_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode("utf-8")
 
-    async def verify_visuals(self, keyframe_paths: list, expected_title: str) -> dict:
+    async def verify_visuals(self, keyframe_paths: list, expected_title: str, metadata: dict = None) -> dict:
         """Runs Qwen2.5-VL via Ollama API to verify title cards, credits, and visual context."""
         logger.info(f"=== AI Visual Verification Started for expected title: '{expected_title}' ===")
         results = {
@@ -44,27 +44,42 @@ class AIVerifier:
             logger.warning("No keyframes found for visual check.")
             return results
 
-        # 1. Title verification (typically 5% keyframe)
+        # 1. Title verification (typically early keyframes: e.g. 1%, 2%, 4%, 7%, 10%)
         try:
-            img_b64 = self._encode_image(keyframe_paths[0])
+            early_keyframes = keyframe_paths[:5]  # first 5 keyframes
+            images_b64 = [self._encode_image(p) for p in early_keyframes]
             prompt = (
-                f"Analyze this image. It is the beginning of a movie/show. "
-                f"Is the title '{expected_title}' displayed or visible on screen? "
+                f"Analyze these {len(early_keyframes)} early images from the beginning of a video. "
+                f"Is the title '{expected_title}' displayed or visible as text on screen in any of these frames? "
+                f"Look closely at title cards, opening credits, or overlay text. "
                 f"Respond with a JSON object: {{\"title_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
             )
-            logger.info("Sending Stage 1 (Title Check) prompt to Qwen2.5-VL...")
-            title_resp = await self._query_ollama(prompt, img_b64)
+            logger.info("Sending Stage 1 (Title Check) prompt with multiple images to Qwen2.5-VL...")
+            title_resp = await self._query_ollama(prompt, images_b64)
             logger.info(f"Stage 1 Response: {title_resp}")
-            results["title_verified"] = title_resp.get("title_found", False)
+            results["title_verified"] = title_resp.get("title_found", False) or title_resp.get("title_verified", False)
             results["raw_logs"].append({"stage": "title", "response": title_resp})
         except Exception as e:
             logger.error(f"Title VLM check failed: {e}")
             results["raw_logs"].append({"stage": "title", "error": str(e)})
 
-        # 2. Credits verification (typically 90% keyframe)
+        # 2. Credits verification (typically late keyframes: 85%, 90%, 94%, 98%)
         try:
-            if len(keyframe_paths) >= 5:
-                img_b64 = self._encode_image(keyframe_paths[4]) # 90% keyframe
+            if len(keyframe_paths) >= 15:
+                late_keyframes = keyframe_paths[-4:]  # last 4 keyframes
+                images_b64 = [self._encode_image(p) for p in late_keyframes]
+                prompt = (
+                    "Analyze these images from the end of a video. "
+                    "Are end credits, actor names, production logos, scroll text, or cast lists visible in any of these frames? "
+                    "Respond with a JSON object: {\"credits_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}"
+                )
+                logger.info("Sending Stage 2 (Credits Check) prompt with multiple images to Qwen2.5-VL...")
+                credits_resp = await self._query_ollama(prompt, images_b64)
+                logger.info(f"Stage 2 Response: {credits_resp}")
+                results["credits_verified"] = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
+                results["raw_logs"].append({"stage": "credits", "response": credits_resp})
+            elif keyframe_paths:
+                img_b64 = self._encode_image(keyframe_paths[-1])
                 prompt = (
                     "Analyze this image. It is from the end of a movie/show. "
                     "Are end credits, actor names, production logos, or scrolling credits visible on screen? "
@@ -73,16 +88,50 @@ class AIVerifier:
                 logger.info("Sending Stage 2 (Credits Check) prompt to Qwen2.5-VL...")
                 credits_resp = await self._query_ollama(prompt, img_b64)
                 logger.info(f"Stage 2 Response: {credits_resp}")
-                results["credits_verified"] = credits_resp.get("credits_found", False)
+                results["credits_verified"] = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
                 results["raw_logs"].append({"stage": "credits", "response": credits_resp})
         except Exception as e:
             logger.error(f"Credits VLM check failed: {e}")
             results["raw_logs"].append({"stage": "credits", "error": str(e)})
 
-        # 3. Sanity verification (typically mid keyframe e.g. 50%)
+        # 3. Sanity verification (typically mid keyframes: 20%, 30%, 45%, 60%, 70%, 80%)
         try:
-            if len(keyframe_paths) >= 3:
-                img_b64 = self._encode_image(keyframe_paths[2]) # 50% keyframe
+            meta_str = ""
+            if metadata:
+                meta_str += f"\n\nExpected Media Metadata Guidelines:"
+                if metadata.get("year"):
+                    meta_str += f"\n- Release Year: {metadata['year']}"
+                if metadata.get("genres"):
+                    meta_str += f"\n- Genres: {', '.join(metadata['genres'])}"
+                if metadata.get("roles"):
+                    meta_str += f"\n- Key Cast/Actors: {', '.join(metadata['roles'])}"
+                if metadata.get("summary"):
+                    meta_str += f"\n- Plot Summary: {metadata['summary']}"
+
+            if len(keyframe_paths) >= 11:
+                mid_keyframes = keyframe_paths[5:11]  # middle 6 keyframes
+                images_b64 = [self._encode_image(p) for p in mid_keyframes]
+                prompt = (
+                    f"You are verifying if a video file matches its expected title: '{expected_title}'.{meta_str}\n\n"
+                    f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
+                    f"1. Identify the setting, genre, and any recognizable actors, characters, or specific movies/shows.\n"
+                    f"2. Assess whether this visual content is consistent with the expected title '{expected_title}' and the metadata guidelines above. "
+                    f"State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{expected_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
+                    f"If the expected title '{expected_title}' is generic or unknown to you, does the content look like a valid movie/show scene (e.g. contains actors, normal settings, or animation, and is not a blank screen, test pattern, static, or corrupt video)?\n"
+                    f"Respond with a JSON object:\n"
+                    f"{{\n"
+                    f"  \"content_matches\": true/false,\n"
+                    f"  \"description\": \"brief summary of detected elements\",\n"
+                    f"  \"reason\": \"explanation of why it matches or contradicts the expected title\"\n"
+                    f"}}"
+                )
+                logger.info("Sending Stage 3 (Sanity Check) prompt with multiple images to Qwen2.5-VL...")
+                sanity_resp = await self._query_ollama(prompt, images_b64)
+                logger.info(f"Stage 3 Response: {sanity_resp}")
+                results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
+                results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
+            elif len(keyframe_paths) >= 3:
+                img_b64 = self._encode_image(keyframe_paths[len(keyframe_paths)//2])
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
                     f"media file titled '{expected_title}'? Answer with a JSON object: "
@@ -91,7 +140,7 @@ class AIVerifier:
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64)
                 logger.info(f"Stage 3 Response: {sanity_resp}")
-                results["sanity_check_passed"] = sanity_resp.get("content_matches", False)
+                results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
         except Exception as e:
             logger.error(f"Sanity check VLM failed: {e}")
@@ -99,15 +148,18 @@ class AIVerifier:
 
         return results
 
-    async def _query_ollama(self, prompt: str, image_b64: str) -> dict:
-        """Sends request to local Ollama API."""
+    async def _query_ollama(self, prompt: str, images_b64: list | str) -> dict:
+        """Sends request to local Ollama API with one or more base64 encoded images."""
+        if isinstance(images_b64, str):
+            images_b64 = [images_b64]
+            
         payload = {
             "model": OLLAMA_MODEL,
             "messages": [
                 {
                     "role": "user",
                     "content": prompt,
-                    "images": [image_b64]
+                    "images": images_b64
                 }
             ],
             "stream": False

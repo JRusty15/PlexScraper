@@ -86,8 +86,8 @@ class MediaProcessor:
         }
 
     def extract_keyframes(self, filepath: str, duration: float, media_id: int) -> list:
-        """Extracts 5 keyframes at 5%, 25%, 50%, 75%, 90% duration using throttled ffmpeg."""
-        percentages = [5, 25, 50, 75, 90]
+        """Extracts 15 keyframes at 1%, 2%, 4%, 7%, 10%, 20%, 30%, 45%, 60%, 70%, 80%, 85%, 90%, 94%, 98% duration using throttled ffmpeg."""
+        percentages = [1, 2, 4, 7, 10, 20, 30, 45, 60, 70, 80, 85, 90, 94, 98]
         extracted_paths = []
         
         for pct in percentages:

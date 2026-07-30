@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
 from app.media_processor import MediaProcessor
 from app.ai_verifier import AIVerifier
+from app.plex_client import PlexClient
 
 logger = logging.getLogger("queue_manager")
 
@@ -116,7 +117,22 @@ class QueueWorker:
             # Check if previous stages already flagged duration. If not, do VLM / Whisper checks.
             if result.status != FileStatus.FLAGGED_DURATION:
                 logger.info("Running AI visual checks...")
-                vlm_res = await self.verifier.verify_visuals(kf_paths, media_file.title or media_file.filename)
+                
+                # Fetch metadata from Plex if rating key exists
+                plex_meta = None
+                if media_file.plex_rating_key:
+                    try:
+                        plex = PlexClient()
+                        plex_meta = plex.get_metadata(media_file.plex_rating_key)
+                        logger.info(f"Loaded Plex/TMDB metadata: {list(plex_meta.keys())}")
+                    except Exception as e:
+                        logger.error(f"Error fetching Plex metadata for queue verifier: {e}")
+
+                vlm_res = await self.verifier.verify_visuals(
+                    kf_paths, 
+                    media_file.title or media_file.filename,
+                    metadata=plex_meta
+                )
                 result.vlm_title_verified = vlm_res["title_verified"]
                 result.vlm_credits_verified = vlm_res["credits_verified"]
                 result.vlm_sanity_check_passed = vlm_res["sanity_check_passed"]
@@ -135,15 +151,19 @@ class QueueWorker:
                     reason_msg = resp.get("reason") or resp.get("raw_text_fallback") or json.dumps(resp)
                     vlm_summary += f"[{stage_name}]: {reason_msg}. "
                 
-                if not vlm_res["title_verified"]:
+                # Visual verification passes if title is found OR content consistency sanity check passes
+                visual_check_passed = vlm_res["title_verified"] or vlm_res["sanity_check_passed"]
+                
+                if not visual_check_passed:
                     result.status = FileStatus.FLAGGED_TITLE
-                    result.notes = f"Title card not verified. VLM details: {vlm_summary}"
+                    result.notes = f"Visual verification failed. Title card not verified and sanity check failed. VLM details: {vlm_summary}"
                 elif "en" not in audio_res["languages"]:
                     result.status = FileStatus.FLAGGED_LANGUAGE
                     result.notes = f"English audio check failed. Detected: {result.detected_languages}. VLM details: {vlm_summary}"
                 else:
                     result.status = FileStatus.VERIFIED
-                    result.notes = f"All verification steps passed successfully. VLM details: {vlm_summary}"
+                    notes_prefix = "All verification steps passed. " if vlm_res["title_verified"] else "Title card not verified, but visual sanity check passed. "
+                    result.notes = f"{notes_prefix}VLM details: {vlm_summary}"
                     
             # Complete Job
             job.status = JobStatus.COMPLETED
