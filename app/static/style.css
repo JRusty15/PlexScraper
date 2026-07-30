@@ -123,6 +123,28 @@ body {
     color: #fff;
 }
 
+.btn-success:hover {
+    background-color: #059669;
+}
+
+.btn-warning {
+    background-color: var(--warning);
+    color: #fff;
+}
+
+.btn-warning:hover {
+    background-color: #d97706;
+}
+
+.btn-danger {
+    background-color: var(--danger);
+    color: #fff;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
 /* Stats Section */
 .stats-grid {
     display: grid;
@@ -350,6 +372,16 @@ body {
 .modal-body {
     padding: 1.5rem;
     overflow-y: auto;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    background: rgba(10, 12, 22, 0.4);
+    border-radius: 0 0 16px 16px;
 }
 
 .modal-section {

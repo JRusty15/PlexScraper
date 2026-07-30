@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import asyncio
 import logging
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException
@@ -248,6 +249,58 @@ def requeue_file(file_id: int, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     return {"message": f"File {media_file.filename} requeued."}
+
+@app.post("/api/files/{file_id}/manual-verify")
+def manual_verify_file(file_id: int, db: Session = Depends(get_db)):
+    """Manually marks a file as verified."""
+    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    if not media_file:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    media_file.status = FileStatus.VERIFIED
+    
+    # Check if there is an AuditResult, or create a new one
+    result = db.query(AuditResult).filter(AuditResult.media_file_id == file_id).order_by(AuditResult.audited_at.desc()).first()
+    if not result:
+        result = AuditResult(media_file_id=file_id)
+        db.add(result)
+        
+    result.status = FileStatus.VERIFIED
+    result.confidence_score = 100
+    result.notes = "Manually verified by user."
+    result.audited_at = datetime.utcnow()
+    
+    # Clean any pending jobs for this file
+    db.query(AuditJob).filter(AuditJob.media_file_id == file_id, AuditJob.status == JobStatus.PENDING).delete()
+    
+    db.commit()
+    return {"message": f"File {media_file.filename} manually verified."}
+
+@app.post("/api/files/{file_id}/manual-flag")
+def manual_flag_file(file_id: int, db: Session = Depends(get_db)):
+    """Manually marks a file as flagged/incorrect."""
+    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    if not media_file:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    media_file.status = FileStatus.FLAGGED_TITLE
+    
+    # Check if there is an AuditResult, or create a new one
+    result = db.query(AuditResult).filter(AuditResult.media_file_id == file_id).order_by(AuditResult.audited_at.desc()).first()
+    if not result:
+        result = AuditResult(media_file_id=file_id)
+        db.add(result)
+        
+    result.status = FileStatus.FLAGGED_TITLE
+    result.confidence_score = 0
+    result.notes = "Manually flagged as incorrect by user."
+    result.audited_at = datetime.utcnow()
+    
+    # Clean any pending jobs for this file
+    db.query(AuditJob).filter(AuditJob.media_file_id == file_id, AuditJob.status == JobStatus.PENDING).delete()
+    
+    db.commit()
+    return {"message": f"File {media_file.filename} manually flagged."}
 
 def clean_physical_assets():
     # Remove physical files from keyframes and audio dirs

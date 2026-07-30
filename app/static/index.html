@@ -165,6 +165,12 @@
                     </div>
                 </div>
             </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-btn-rescan" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Rescan File</button>
+                <button class="btn btn-success" id="modal-btn-verify" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Mark Correct</button>
+                <button class="btn btn-danger" id="modal-btn-flag" style="font-size: 0.85rem; padding: 0.5rem 1rem; color: white;">Mark Incorrect</button>
+                <button class="btn btn-secondary" onclick="closeModal()" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Close</button>
+            </div>
         </div>
     </div>
 
@@ -465,6 +471,48 @@
             }
         }
 
+        async function manualRescan(id) {
+            try {
+                const response = await fetch(`/api/files/${id}/requeue`, { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "File queued for rescan.", 'success');
+                closeModal();
+                await fetchFiles(true);
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to queue file for rescan.", 'error');
+            }
+        }
+
+        async function manualVerify(id) {
+            try {
+                const response = await fetch(`/api/files/${id}/manual-verify`, { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "File marked as verified.", 'success');
+                closeModal();
+                await fetchFiles(true);
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to manually verify file.", 'error');
+            }
+        }
+
+        async function manualFlag(id) {
+            try {
+                const response = await fetch(`/api/files/${id}/manual-flag`, { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "File marked as incorrect.", 'warning');
+                closeModal();
+                await fetchFiles(true);
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to manually flag file.", 'error');
+            }
+        }
+
         function switchView(viewName) {
             currentView = viewName;
             updateURL();
@@ -560,6 +608,11 @@
         function viewDetails(id) {
             const file = filesData.find(f => f.id === id);
             if (!file) return;
+
+            // Wire up modal footer actions
+            document.getElementById('modal-btn-rescan').onclick = () => manualRescan(id);
+            document.getElementById('modal-btn-verify').onclick = () => manualVerify(id);
+            document.getElementById('modal-btn-flag').onclick = () => manualFlag(id);
 
             document.getElementById('modal-title').innerText = file.filename;
             
