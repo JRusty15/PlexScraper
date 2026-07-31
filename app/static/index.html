@@ -6,6 +6,7 @@
     <title>PlexScraper Media Verification Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🎬</text></svg>">
 </head>
 <body>
     <div class="glass-bg"></div>
@@ -63,6 +64,17 @@
                     <h3 class="stat-value" id="stat-pending">0</h3>
                 </div>
             </section>
+
+            <!-- Active Processing Jobs Panel -->
+            <div id="active-jobs-panel" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; animation: fadeIn 0.3s ease-in-out;">
+                <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="spinner-btn" style="border-width: 2px; width: 14px; height: 14px; border-top-color: var(--accent);"></span> 
+                    Currently Processing in Parallel
+                </h4>
+                <div id="active-jobs-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">
+                    <!-- Injected dynamically -->
+                </div>
+            </div>
 
             <!-- Main Workspace -->
             <main class="content-area">
@@ -129,13 +141,41 @@
                 </div>
                 
                 <div class="settings-grid">
-                     <div class="settings-card">
-                         <div>
-                             <h3>Audit Failures Log</h3>
-                             <p class="settings-desc">Displays the plain text contents of failures logged by the background worker, showing detailed reasons why files were flagged.</p>
-                         </div>
-                         <button class="btn btn-primary" onclick="viewFailuresLog()" style="margin-top: 1rem; width: fit-content;">View Failures Log</button>
-                     </div>
+                      <div class="settings-card" style="grid-column: span 2;">
+                          <div>
+                              <h3>Resource & Concurrency Limits</h3>
+                              <p class="settings-desc">Tweak the background worker's processing concurrency and core limits on the fly. Higher values speed up validation but consume more CPU/GPU resources.</p>
+                              
+                              <div style="display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.5rem; max-width: 500px;">
+                                  <div>
+                                      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.35rem;">
+                                          <span><strong>Max Parallel Jobs:</strong></span>
+                                          <span id="label-max-jobs" style="color: var(--accent); font-weight: bold;">4</span>
+                                      </div>
+                                      <input type="range" id="input-max-jobs" min="1" max="8" step="1" value="4" oninput="document.getElementById('label-max-jobs').innerText = this.value" style="width: 100%; accent-color: var(--accent); cursor: pointer;">
+                                      <span style="font-size: 0.75rem; color: var(--text-secondary);">Controls how many media files the audit scheduler processes in parallel.</span>
+                                  </div>
+                                  
+                                  <div>
+                                      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.35rem;">
+                                          <span><strong>FFmpeg Threads per file:</strong></span>
+                                          <span id="label-ffmpeg-threads" style="color: var(--accent); font-weight: bold;">2</span>
+                                      </div>
+                                      <input type="range" id="input-ffmpeg-threads" min="1" max="4" step="1" value="2" oninput="document.getElementById('label-ffmpeg-threads').innerText = this.value" style="width: 100%; accent-color: var(--accent); cursor: pointer;">
+                                      <span style="font-size: 0.75rem; color: var(--text-secondary);">Controls how many CPU threads FFmpeg uses for keyframe/audio clip extractions.</span>
+                                  </div>
+                              </div>
+                          </div>
+                          <button class="btn btn-success" onclick="savePipelineConfig()" style="margin-top: 1.5rem; width: fit-content; padding: 0.5rem 1.25rem;">Save Config Preferences</button>
+                      </div>
+
+                      <div class="settings-card">
+                          <div>
+                              <h3>Audit Failures Log</h3>
+                              <p class="settings-desc">Displays the plain text contents of failures logged by the background worker, showing detailed reasons why files were flagged.</p>
+                          </div>
+                          <button class="btn btn-primary" onclick="viewFailuresLog()" style="margin-top: 1rem; width: fit-content;">View Failures Log</button>
+                      </div>
 
                      <div class="settings-card">
                         <div>
@@ -344,11 +384,27 @@
                 document.getElementById('stat-pending').innerText = data.pending_jobs_count;
                 
                 let statusText = "Status: Idle";
+                const panel = document.getElementById('active-jobs-panel');
+                const list = document.getElementById('active-jobs-list');
+                
                 if (data.active_jobs && data.active_jobs.length > 0) {
-                    const names = data.active_jobs.map(j => j.filename).join(" | ");
-                    statusText = `Status: Processing [${names}]`;
-                } else if (data.is_paused) {
-                    statusText = "Status: Paused";
+                    statusText = `Status: Processing (${data.active_jobs.length} active jobs)`;
+                    
+                    // Render parallel jobs list
+                    list.innerHTML = data.active_jobs.map(j => `
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                            <span style="font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 80%;" title="${j.filename}">${j.filename}</span>
+                            <span class="badge status-verifying" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+                                <span class="spinner-btn" style="border-width: 1.5px; width: 10px; height: 10px; border-top-color: white;"></span> Auditing
+                            </span>
+                        </div>
+                    `).join('');
+                    panel.style.display = 'block';
+                } else {
+                    panel.style.display = 'none';
+                    if (data.is_paused) {
+                        statusText = "Status: Paused";
+                    }
                 }
                 document.getElementById('pipeline-status').innerText = statusText;
                 
@@ -646,6 +702,42 @@
             }
         }
 
+        async function loadPipelineConfig() {
+            try {
+                const response = await fetch('/api/pipeline/config');
+                const data = await response.json();
+                
+                document.getElementById('input-max-jobs').value = data.max_concurrent_jobs;
+                document.getElementById('label-max-jobs').innerText = data.max_concurrent_jobs;
+                
+                document.getElementById('input-ffmpeg-threads').value = data.ffmpeg_threads;
+                document.getElementById('label-ffmpeg-threads').innerText = data.ffmpeg_threads;
+            } catch (err) {
+                console.error("Failed to load pipeline settings:", err);
+            }
+        }
+
+        async function savePipelineConfig() {
+            const maxJobs = parseInt(document.getElementById('input-max-jobs').value);
+            const threads = parseInt(document.getElementById('input-ffmpeg-threads').value);
+            
+            try {
+                const response = await fetch('/api/pipeline/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        max_concurrent_jobs: maxJobs,
+                        ffmpeg_threads: threads
+                    })
+                });
+                const data = await response.json();
+                showToast(data.message || "Config settings updated.", 'success');
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to save settings.", 'error');
+            }
+        }
+
         function switchView(viewName) {
             currentView = viewName;
             updateURL();
@@ -674,6 +766,7 @@
                     pane.classList.add('active');
                     pane.style.display = 'block';
                 }
+                loadPipelineConfig();
             }
         }
 

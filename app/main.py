@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 from pydantic import BaseModel
 
-from app.database import init_db, get_db, SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
+from app.database import init_db, get_db, SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus, SystemConfig
 from app.queue_manager import worker
 from app.scanner import MediaScanner
 from app.plex_client import PlexClient
@@ -120,6 +120,45 @@ def get_failures_log():
             return {"log": f.read()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read failures log: {str(e)}")
+
+class ConfigUpdateRequest(BaseModel):
+    max_concurrent_jobs: int
+    ffmpeg_threads: int
+
+@app.get("/api/pipeline/config")
+def get_pipeline_config(db: Session = Depends(get_db)):
+    """Retrieves current in-memory / database system config parameters."""
+    max_concurrent = db.query(SystemConfig).filter(SystemConfig.key == "MAX_CONCURRENT_JOBS").first()
+    ffmpeg_threads = db.query(SystemConfig).filter(SystemConfig.key == "FFMPEG_THREADS").first()
+    
+    return {
+        "max_concurrent_jobs": int(max_concurrent.value) if max_concurrent else int(os.environ.get("MAX_CONCURRENT_JOBS", "3")),
+        "ffmpeg_threads": int(ffmpeg_threads.value) if ffmpeg_threads else int(os.environ.get("FFMPEG_THREADS", "1"))
+    }
+
+@app.post("/api/pipeline/config")
+def update_pipeline_config(config: ConfigUpdateRequest, db: Session = Depends(get_db)):
+    """Saves new settings preferences to database and applies them in-memory immediately."""
+    try:
+        # Update SQLite DB records
+        for key, val in [("MAX_CONCURRENT_JOBS", str(config.max_concurrent_jobs)), ("FFMPEG_THREADS", str(config.ffmpeg_threads))]:
+            record = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+            if not record:
+                record = SystemConfig(key=key, value=val)
+                db.add(record)
+            else:
+                record.value = val
+        db.commit()
+        
+        # Apply in-memory variables immediately to active process environment
+        os.environ["MAX_CONCURRENT_JOBS"] = str(config.max_concurrent_jobs)
+        os.environ["FFMPEG_THREADS"] = str(config.ffmpeg_threads)
+        
+        logger.info(f"System settings updated. Max jobs: {config.max_concurrent_jobs}, FFmpeg threads: {config.ffmpeg_threads}")
+        return {"message": "System config settings updated successfully."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
 
 @app.post("/api/pipeline/pause")
 def pause_pipeline():

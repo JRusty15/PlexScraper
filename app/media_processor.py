@@ -90,8 +90,8 @@ class MediaProcessor:
         extracted_paths = []
         
         # We sample:
-        # Title check timestamps (in seconds): 60s, 120s, 180s, 240s, 300s (capped by movie duration)
-        title_times = [60, 120, 180, 240, 300]
+        # Title check timestamps (in seconds): shifted earlier to catch sitcom intros (usually between 30s - 75s)
+        title_times = [30, 45, 75, 120, 240]
         # Content sanity timestamps (percentages): 25%, 50%, 75%, 90% (credits)
         pct_times = [0.25 * duration, 0.50 * duration, 0.75 * duration, 0.90 * duration]
         

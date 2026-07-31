@@ -172,7 +172,13 @@ def test_index_html_dom_elements():
         "modal-keyframes",
         "audio-detected-lang",
         "audio-transcript",
-        "details-modal"
+        "details-modal",
+        "active-jobs-panel",
+        "active-jobs-list",
+        "label-max-jobs",
+        "label-ffmpeg-threads",
+        "input-max-jobs",
+        "input-ffmpeg-threads"
     ]
     
     for element_id in required_ids:

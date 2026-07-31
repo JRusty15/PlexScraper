@@ -113,6 +113,11 @@ class AuditResult(Base):
 
     media_file = relationship("MediaFile", back_populates="results")
 
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=False)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     

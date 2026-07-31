@@ -54,9 +54,11 @@ class AIVerifier:
         
         clean = re.sub(r'\s+', ' ', clean).strip()
         
-        # If it's a TV show with episode markers (e.g. S01E01 or 1x01), extract the show title prefix
-        show_match = re.split(r'\bs\d{2}e\d{2}\b|\b\d+x\d+\b', clean, flags=re.IGNORECASE)
-        if show_match and len(show_match) > 1 and show_match[0].strip():
+        # If it's a TV show with episode markers or 3-4 digit season/episode numbers (e.g., 1011, 1007, S12E10, S10E23, 12x04)
+        # We split by these markers and keep only the preceding show name prefix.
+        # We use a negative lookahead to prevent stripping movie release years (e.g. 1930-2029)
+        show_match = re.split(r'\bs\d{1,2}e\d{1,2}\b|\b\d+x\d+\b|\b(?!(?:19[3-9]\d|20[0-2]\d)\b)\d{3,4}\b', clean, flags=re.IGNORECASE)
+        if show_match and len(show_match) > 0 and show_match[0].strip():
             clean = show_match[0].strip()
             
         return clean or raw_title
@@ -154,7 +156,7 @@ class AIVerifier:
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
                     f"1. Identify the setting, genre, and style of the video (e.g. animation, live-action film, documentary, news, sitcom).\n"
                     f"2. Evaluate if there is a CLEAR, ACTIVE CONTRADICTION between these scenes and the expected media '{clean_title}' (e.g., the expected title is a sci-fi blockbuster like '{clean_title}', but the images show a 2D cartoon or a cooking show; or the expected title is a drama, but the images show a sports broadcast or a video game stream).\n"
-                    f"3. NOTE: Normal cinematic movie scenes (e.g. characters talking, walking, sitting in a room, generic offices, driving cars) are completely normal and do NOT contradict the film. Do NOT reject the file simply because you see everyday settings or casual conversations instead of giant monsters, action scenes, or specific plot points mentioned in the summary. If the scenes look like a normal live-action film matching the expected title's broad setting or genre, you MUST mark 'content_matches: true'.\n"
+                    f"3. NOTE: Normal cinematic movie or sitcom scenes (e.g. characters talking, walking, sitting in a living room, standing near a whiteboard with equations, in a comic book shop, or in generic offices) are completely normal and do NOT contradict the film/show. Do NOT confuse whiteboard equations or apartments in sitcoms like 'The Big Bang Theory' with classroom lectures, documentaries, or educational content. If you recognize any of the main cast/characters from the show '{clean_title}', or if the scenes show a live-action sitcom style that generally matches the expected show, you MUST mark 'content_matches: true'.\n"
                     f"Respond with a JSON object:\n"
                     f"{{\n"
                     f"  \"content_matches\": true/false,\n"
