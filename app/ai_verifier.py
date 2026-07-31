@@ -131,15 +131,21 @@ class AIVerifier:
                 if metadata.get("summary"):
                     meta_str += f"\n- Plot Summary: {metadata['summary']}"
 
-            if len(keyframe_paths) >= 11:
-                mid_keyframes = keyframe_paths[5:11]  # middle 6 keyframes
+            # Since keyframes are sampled at 1m, 2m, 3m, 4m, 5m followed by percentages:
+            # First 5 frames are early checks, last frame is credits, middle ones are sanity checks.
+            if len(keyframe_paths) >= 6:
+                # Mid keyframes are those between early title checks (first 5) and late credits check (last 1)
+                mid_keyframes = keyframe_paths[5:-1]
+                if not mid_keyframes:
+                    mid_keyframes = [keyframe_paths[len(keyframe_paths)//2]]
                 images_b64 = [self._encode_image(p) for p in mid_keyframes]
                 prompt = (
                     f"You are verifying if a video file matches its expected title: '{clean_title}'.{meta_str}\n\n"
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
                     f"1. Identify the setting, genre, and any recognizable actors, characters, or specific movies/shows.\n"
                     f"2. Assess whether this visual content is consistent with the expected title '{clean_title}' or its franchise, and the metadata guidelines above. "
-                    f"State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{clean_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
+                    f"If key actors listed above (e.g. key cast) are clearly visible in these scenes, explain this in the reason.\n"
+                    f"3. State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{clean_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
                     f"If the expected title '{clean_title}' is generic or unknown to you, does the content look like a valid movie/show scene (e.g. contains actors, normal settings, or animation, and is not a blank screen, test pattern, static, or corrupt video)?\n"
                     f"Respond with a JSON object:\n"
                     f"{{\n"

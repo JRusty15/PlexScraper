@@ -154,10 +154,21 @@ class QueueWorker:
                 # Visual verification passes if title is found OR content consistency sanity check passes
                 visual_check_passed = vlm_res["title_verified"] or vlm_res["sanity_check_passed"]
                 
+                # Language override: if ffprobe detected an explicit 'eng' audio track in the headers,
+                # we bypass Whisper verification failures as it acts as high confidence metadata proof.
+                has_eng_track = False
+                if meta.get("audio_tracks"):
+                    for track in meta["audio_tracks"]:
+                        if track.get("language") == "eng":
+                            has_eng_track = True
+                            break
+                            
+                language_check_passed = ("en" in audio_res["languages"]) or has_eng_track
+                
                 if not visual_check_passed:
                     result.status = FileStatus.FLAGGED_TITLE
                     result.notes = f"Visual verification failed. Title card not verified and sanity check failed. VLM details: {vlm_summary}"
-                elif "en" not in audio_res["languages"]:
+                elif not language_check_passed:
                     result.status = FileStatus.FLAGGED_LANGUAGE
                     result.notes = f"English audio check failed. Detected: {result.detected_languages}. VLM details: {vlm_summary}"
                 else:
@@ -165,6 +176,26 @@ class QueueWorker:
                     notes_prefix = "All verification steps passed. " if vlm_res["title_verified"] else "Title card not verified, but visual sanity check passed. "
                     result.notes = f"{notes_prefix}VLM details: {vlm_summary}"
                     
+                # If flagged, append details to a dedicated failures log file
+                if result.status != FileStatus.VERIFIED:
+                    try:
+                        log_dir = Path(self.workspace_root) / "data"
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        log_file = log_dir / "failures.log"
+                        with open(log_file, "a", encoding="utf-8") as f:
+                            timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                            log_entry = (
+                                f"=== FAILURE LOG: {timestamp} ===\n"
+                                f"File: {media_file.filename}\n"
+                                f"Path: {media_file.filepath}\n"
+                                f"Status: {result.status}\n"
+                                f"Details: {result.notes}\n"
+                                f"==================================\n\n"
+                            )
+                            f.write(log_entry)
+                    except Exception as le:
+                        logger.error(f"Failed to write to failures.log: {le}")
+
                 # Calculate final confidence score
                 result.confidence_score = self._calculate_confidence(result, vlm_res, audio_res, media_file)
                     
@@ -180,6 +211,15 @@ class QueueWorker:
             job.status = JobStatus.FAILED
             job.error_message = str(e)
             media_file.status = FileStatus.FLAGGED_CORRUPT
+            
+            # Log parsing failures as well
+            try:
+                log_file = Path(self.workspace_root) / "data" / "failures.log"
+                with open(log_file, "a", encoding="utf-8") as f:
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"=== EXTRACTION/PARSING FAILURE: {timestamp} ===\nFile: {media_file.filename}\nError: {str(e)}\n==================================\n\n")
+            except Exception:
+                pass
             
         db.add(result)
         db.commit()

@@ -86,17 +86,30 @@ class MediaProcessor:
         }
 
     def extract_keyframes(self, filepath: str, duration: float, media_id: int) -> list:
-        """Extracts 15 keyframes at 1%, 2%, 4%, 7%, 10%, 20%, 30%, 45%, 60%, 70%, 80%, 85%, 90%, 94%, 98% duration using throttled ffmpeg."""
-        percentages = [1, 2, 4, 7, 10, 20, 30, 45, 60, 70, 80, 85, 90, 94, 98]
+        """Extracts keyframes at 1m, 2m, 3m, 4m, 5m (for title card checks) and strategic percentages (for sanity checks)."""
         extracted_paths = []
         
-        for pct in percentages:
-            timestamp = (pct / 100.0) * duration
-            out_filename = f"media_{media_id}_pct_{pct}.jpg"
+        # We sample:
+        # Title check timestamps (in seconds): 60s, 120s, 180s, 240s, 300s (capped by movie duration)
+        title_times = [60, 120, 180, 240, 300]
+        # Content sanity timestamps (percentages): 25%, 50%, 75%, 90% (credits)
+        pct_times = [0.25 * duration, 0.50 * duration, 0.75 * duration, 0.90 * duration]
+        
+        # Combine and sort unique timestamps
+        timestamps = []
+        for t in title_times:
+            if t < duration:
+                timestamps.append(t)
+        for t in pct_times:
+            if t < duration and t not in timestamps:
+                timestamps.append(t)
+        timestamps = sorted(list(set(timestamps)))
+        
+        for idx, timestamp in enumerate(timestamps):
+            out_filename = f"media_{media_id}_frame_{idx}.jpg"
             out_path = self.keyframes_dir / out_filename
             
-            # Using -ss before input is fast, and seeking accurately is fine.
-            # Limit threads to 1 and low priority to reduce CPU usage.
+            # Extract 1 frame at target timestamp, low priority thread
             cmd = [
                 "ffmpeg",
                 "-y",
@@ -104,13 +117,12 @@ class MediaProcessor:
                 "-threads", "1",
                 "-i", filepath,
                 "-vframes", "1",
-                "-q:v", "4",  # medium quality JPEG
+                "-q:v", "4",
                 str(out_path)
             ]
             
             returncode, stdout, stderr = run_throttled_process(cmd)
             if returncode == 0 and out_path.exists():
-                # Store relative path for frontend access
                 extracted_paths.append(f"/static/media/keyframes/{out_filename}")
                 
         return extracted_paths
