@@ -14,6 +14,17 @@ class AIVerifier:
     def __init__(self, workspace_root: str = "."):
         self.workspace_root = Path(workspace_root)
 
+    def _encode_image(self, image_rel_path: str) -> str:
+        """Converts a relative web URL keyframe path back to local path and encodes to base64."""
+        clean_path = image_rel_path.lstrip("/")
+        local_filename = clean_path.split("/")[-1]
+        local_path = self.workspace_root / "processed_media" / "keyframes" / local_filename
+        if not local_path.exists():
+            raise FileNotFoundError(f"Keyframe image not found at {local_path}")
+            
+        with open(local_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode("utf-8")
+
     def _sanitize_title(self, raw_title: str) -> str:
         """Sanitizes titles by removing common release tags, codecs, resolution flags, and bracket text."""
         import re
