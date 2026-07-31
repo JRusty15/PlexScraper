@@ -139,9 +139,13 @@ class QueueWorker:
                     except Exception as e:
                         logger.error(f"Error fetching Plex metadata for queue verifier: {e}")
 
+                resolved_title = None
+                if plex_meta:
+                    resolved_title = plex_meta.get("title")
+                    
                 vlm_res = await self.verifier.verify_visuals(
                     kf_paths, 
-                    media_file.title or media_file.filename,
+                    resolved_title or media_file.title or media_file.filename,
                     metadata=plex_meta
                 )
                 result.vlm_title_verified = vlm_res["title_verified"]
