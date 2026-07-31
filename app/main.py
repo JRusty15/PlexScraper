@@ -18,6 +18,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("main")
 
 app = FastAPI(title="PlexScraper Media Verification Service")
+STARTUP_TIME = int(datetime.utcnow().timestamp())
+
+@app.get("/api/version")
+def get_version():
+    """Gets the unique server startup timestamp to trigger UI auto-refresh on new deploys."""
+    return {"version": STARTUP_TIME}
 
 app.add_middleware(
     CORSMiddleware,

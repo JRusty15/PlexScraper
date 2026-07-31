@@ -272,8 +272,8 @@
         let totalItemsCount = 0;
         let searchTimeout = null;
         let currentView = 'dashboard';
-        let currentSortBy = 'added_at';
         let currentSortOrder = 'desc';
+        let serverVersion = null;
 
         function loadStateFromURL() {
             const params = new URLSearchParams(window.location.search);
@@ -375,6 +375,16 @@
 
         async function fetchStatus() {
             try {
+                // Check server startup version to trigger auto-reload on deployments
+                const verResponse = await fetch('/api/version');
+                const verData = await verResponse.json();
+                if (serverVersion && serverVersion !== verData.version) {
+                    console.log("New server version detected. Refreshing page assets...");
+                    window.location.reload();
+                    return;
+                }
+                serverVersion = verData.version;
+
                 const response = await fetch('/api/status');
                 const data = await response.json();
                 
