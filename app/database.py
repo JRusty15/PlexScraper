@@ -9,7 +9,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./plex_verification.db"
 
 engine = create_engine(
     DATABASE_URL, 
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 60},
     poolclass=NullPool
 )
 

@@ -71,49 +71,44 @@ def shutdown_event():
     logger.info("Queue worker stopped.")
 
 @app.get("/api/status")
-def get_service_status():
-    """Gets general statistics and pipeline state."""
-    db = SessionLocal()
-    try:
-        from sqlalchemy import func
-        # Query counts grouped by status in one call
-        counts = db.query(MediaFile.status, func.count(MediaFile.id)).group_by(MediaFile.status).all()
-        counts_dict = {status: count for status, count in counts}
-        
-        total_files = sum(counts_dict.values())
-        verified_files = counts_dict.get(FileStatus.VERIFIED, 0)
-        
-        # Safely check for FLAGGED_ status
-        flagged_files = sum(
-            count for status, count in counts_dict.items() 
-            if status and (
-                (hasattr(status, "value") and status.value.startswith("FLAGGED_")) or
-                (isinstance(status, str) and status.startswith("FLAGGED_"))
-            )
+def get_service_status(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    # Query counts grouped by status in one call
+    counts = db.query(MediaFile.status, func.count(MediaFile.id)).group_by(MediaFile.status).all()
+    counts_dict = {status: count for status, count in counts}
+    
+    total_files = sum(counts_dict.values())
+    verified_files = counts_dict.get(FileStatus.VERIFIED, 0)
+    
+    # Safely check for FLAGGED_ status
+    flagged_files = sum(
+        count for status, count in counts_dict.items() 
+        if status and (
+            (hasattr(status, "value") and status.value.startswith("FLAGGED_")) or
+            (isinstance(status, str) and status.startswith("FLAGGED_"))
         )
-        
-        pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
-        
-        current_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).all()
-        active_jobs = [
-            {
-                "id": j.id,
-                "filename": j.media_file.filename if j.media_file else "Unknown"
-            }
-            for j in current_jobs if j.media_file
-        ]
-
-        return {
-            "is_running": worker.is_running,
-            "is_paused": worker.is_paused,
-            "total_files": total_files,
-            "verified_files": verified_files,
-            "flagged_files": flagged_files,
-            "pending_jobs_count": pending_jobs,
-            "active_jobs": active_jobs
+    )
+    
+    pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
+    
+    current_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).all()
+    active_jobs = [
+        {
+            "id": j.id,
+            "filename": j.media_file.filename if j.media_file else "Unknown"
         }
-    finally:
-        db.close()
+        for j in current_jobs if j.media_file
+    ]
+
+    return {
+        "is_running": worker.is_running,
+        "is_paused": worker.is_paused,
+        "total_files": total_files,
+        "verified_files": verified_files,
+        "flagged_files": flagged_files,
+        "pending_jobs_count": pending_jobs,
+        "active_jobs": active_jobs
+    }
 
 @app.get("/api/pipeline/failures-log")
 def get_failures_log():
