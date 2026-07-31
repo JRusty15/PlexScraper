@@ -106,6 +106,18 @@ def get_service_status():
     finally:
         db.close()
 
+@app.get("/api/pipeline/failures-log")
+def get_failures_log():
+    """Retrieves the plain text contents of failures.log."""
+    log_path = Path(WORKSPACE_ROOT) / "data" / "failures.log"
+    if not log_path.exists():
+        return {"log": "No failures logged yet."}
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            return {"log": f.read()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read failures log: {str(e)}")
+
 @app.post("/api/pipeline/pause")
 def pause_pipeline():
     worker.pause()

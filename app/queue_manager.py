@@ -3,6 +3,7 @@ import logging
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
+from pathlib import Path
 from app.database import SessionLocal, MediaFile, AuditJob, AuditResult, JobStatus, FileStatus
 from app.media_processor import MediaProcessor
 from app.ai_verifier import AIVerifier

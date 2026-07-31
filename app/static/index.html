@@ -129,7 +129,15 @@
                 </div>
                 
                 <div class="settings-grid">
-                    <div class="settings-card">
+                     <div class="settings-card">
+                         <div>
+                             <h3>Audit Failures Log</h3>
+                             <p class="settings-desc">Displays the plain text contents of failures logged by the background worker, showing detailed reasons why files were flagged.</p>
+                         </div>
+                         <button class="btn btn-primary" onclick="viewFailuresLog()" style="margin-top: 1rem; width: fit-content;">View Failures Log</button>
+                     </div>
+
+                     <div class="settings-card">
                         <div>
                             <h3>Reset & Re-run Queue</h3>
                             <p class="settings-desc">Deletes all previous audit logs, deletes job histories, clears extracted keyframes/audio, and marks all current files as <strong>Pending</strong>. This lets you re-run the entire verification queue without rescanning the filesystem.</p>
@@ -574,6 +582,18 @@
             } catch (err) {
                 console.error(err);
                 showToast("Failed to bulk requeue files.", 'error');
+            }
+        }
+
+        async function viewFailuresLog() {
+            try {
+                const response = await fetch('/api/pipeline/failures-log');
+                const data = await response.json();
+                // Simple popup alert wrapper for raw log display
+                alert(data.log || "No failures logged yet.");
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to fetch failures log.", 'error');
             }
         }
 
