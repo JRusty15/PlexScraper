@@ -26,7 +26,7 @@ jobs:
           fi
           
           echo "Starting updated container..."
-          # Start the new container using the same parameters from docker-compose
+          # Start the new container using the correct Unraid path mappings
           docker run -d \
             --name plex-verifier \
             --restart unless-stopped \
@@ -37,5 +37,6 @@ jobs:
             -e SCAN_PATHS="/media" \
             -v "/opt/plexscraper/data:/app/data" \
             -v "/opt/plexscraper/processed_media:/app/processed_media" \
-            -v "/mnt/user/Media/Movies:/media" \
+            -v "/mnt/unraid/movies:/media/Movies" \
+            -v "/mnt/unraid/tv:/media/TV" \
             plexscraper-verifier:latest
