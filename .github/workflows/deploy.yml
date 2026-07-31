@@ -26,14 +26,14 @@ jobs:
           fi
           
           echo "Starting updated container..."
-          # Start the new container using the correct Unraid path mappings
+          # Start the new container using the correct Ollama model name alias
           docker run -d \
             --name plex-verifier \
             --restart unless-stopped \
             -p 8000:8000 \
             -e DATABASE_URL="sqlite:////app/data/plex_verification.db" \
             -e OLLAMA_API_URL="http://10.0.0.242:11434" \
-            -e OLLAMA_MODEL="qwen2.5-vl" \
+            -e OLLAMA_MODEL="qwen2.5vl" \
             -e SCAN_PATHS="/media" \
             -v "/opt/plexscraper/data:/app/data" \
             -v "/opt/plexscraper/processed_media:/app/processed_media" \
