@@ -199,12 +199,49 @@
                     </div>
                 </div>
 
-                <div class="modal-section">
-                    <h4>Audio & Language Audit (Whisper)</h4>
-                    <p><strong>Detected Language Track:</strong> <span id="audio-detected-lang">-</span></p>
-                    <div class="transcript-box">
-                        <h5>Audio Transcript Snippet</h5>
-                        <p id="audio-transcript" class="transcript-content"></p>
+                <div class="details-layout">
+                    <!-- Left: Metadata & Logs -->
+                    <div class="details-info">
+                        <div class="info-section">
+                            <h4>File Path</h4>
+                            <p id="modal-filepath" class="path-text"></p>
+                        </div>
+                        <div class="info-section">
+                            <h4>Media Details</h4>
+                            <div class="meta-row">
+                                <div><strong>Expected Duration:</strong> <span id="modal-expected-duration">-</span></div>
+                                <div><strong>Actual Duration:</strong> <span id="modal-actual-duration">-</span></div>
+                                <div><strong>Variance:</strong> <span id="modal-variance">-</span></div>
+                            </div>
+                            <div class="meta-row" style="margin-top: 0.5rem;">
+                                <div><strong>Video Codec:</strong> <span id="modal-video-codec">-</span></div>
+                                <div><strong>Audio Codec:</strong> <span id="modal-audio-codec">-</span></div>
+                                <div><strong>Container:</strong> <span id="modal-container">-</span></div>
+                            </div>
+                        </div>
+                        <div class="info-section">
+                            <h4>AI Visual Logs (Qwen2.5-VL)</h4>
+                            <p id="modal-notes" style="font-size: 0.85rem; line-height: 1.4; white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);"></p>
+                        </div>
+                        <div class="info-section">
+                            <h4>Audio Speech & Languages</h4>
+                            <div class="meta-row">
+                                <div><strong>Languages Detected:</strong> <span id="modal-languages">-</span></div>
+                            </div>
+                            <p id="modal-transcript" style="font-size: 0.85rem; font-style: italic; color: var(--text-secondary); margin-top: 0.5rem; background: rgba(0,0,0,0.1); padding: 0.5rem; border-radius: 4px; border-left: 3px solid var(--border-color);"></p>
+                        </div>
+                    </div>
+
+                    <!-- Right: Visual/Audio Captures -->
+                    <div class="details-media">
+                        <h4>Extracted Keyframes</h4>
+                        <div class="keyframes-grid" id="modal-keyframes-container">
+                            <!-- Populated dynamically -->
+                        </div>
+                        <h4 style="margin-top: 1.5rem;">Extracted Audio Clips</h4>
+                        <div class="audio-list" id="modal-audio-container">
+                            <!-- Populated dynamically -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -215,6 +252,12 @@
                 <button class="btn btn-secondary" onclick="closeModal()" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Close</button>
             </div>
         </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div id="lightbox-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 10000; justify-content: center; align-items: center; cursor: zoom-out;" onclick="closeLightbox()">
+        <button style="position: absolute; top: 1.5rem; right: 2rem; background: none; border: none; color: white; font-size: 2.5rem; cursor: pointer; outline: none; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">×</button>
+        <img id="lightbox-img" src="" alt="High resolution keyframe inspect view" style="max-width: 90%; max-height: 85%; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); object-fit: contain; cursor: default;" onclick="event.stopPropagation()">
     </div>
 
     <script>
@@ -799,6 +842,8 @@
                         const img = document.createElement('img');
                         img.src = p;
                         img.className = "keyframe-img";
+                        img.style.cursor = "zoom-in";
+                        img.onclick = () => openLightbox(p);
                         div.appendChild(img);
                         
                         // Add label mapping (15 keyframes: 1%, 2%, 4%, 7%, 10%, 20%, 30%, 45%, 60%, 70%, 80%, 85%, 90%, 94%, 98%)
@@ -865,6 +910,19 @@
             }
 
             document.getElementById('details-modal').style.display = 'flex';
+        }
+
+        function openLightbox(src) {
+            const lightbox = document.getElementById('lightbox-backdrop');
+            const img = document.getElementById('lightbox-img');
+            img.src = src;
+            lightbox.style.display = 'flex';
+        }
+
+        function closeLightbox() {
+            const lightbox = document.getElementById('lightbox-backdrop');
+            lightbox.style.display = 'none';
+            document.getElementById('lightbox-img').src = '';
         }
 
         function closeModal() {
