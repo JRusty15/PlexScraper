@@ -110,14 +110,16 @@ class MediaProcessor:
             out_path = self.keyframes_dir / out_filename
             
             # Extract 1 frame at target timestamp, low priority thread
+            ffmpeg_threads = os.environ.get("FFMPEG_THREADS", "1")
             cmd = [
                 "ffmpeg",
                 "-y",
                 "-ss", str(timestamp),
-                "-threads", "1",
+                "-threads", ffmpeg_threads,
                 "-i", filepath,
                 "-vframes", "1",
-                "-q:v", "4",
+                "-vf", "scale=640:-1",
+                "-q:v", "8",
                 str(out_path)
             ]
             
@@ -126,11 +128,12 @@ class MediaProcessor:
                 extracted_paths.append(f"/static/media/keyframes/{out_filename}")
                 
         return extracted_paths
-
+ 
     def extract_audio_clips(self, filepath: str, duration: float, media_id: int) -> list:
         """Extracts 3x 20s mono wav clips at 30%, 50%, 70% of duration from non-silent regions."""
         percentages = [30, 50, 70]
         extracted_paths = []
+        ffmpeg_threads = os.environ.get("FFMPEG_THREADS", "1")
         
         for idx, pct in enumerate(percentages):
             timestamp = (pct / 100.0) * duration
@@ -142,7 +145,7 @@ class MediaProcessor:
                 "ffmpeg",
                 "-y",
                 "-ss", str(timestamp),
-                "-threads", "1",
+                "-threads", ffmpeg_threads,
                 "-i", filepath,
                 "-t", "20",
                 "-ac", "1",

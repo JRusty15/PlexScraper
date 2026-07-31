@@ -88,8 +88,14 @@ def get_service_status():
         
         pending_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).count()
         
-        current_job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).first()
-        active_filename = current_job.media_file.filename if current_job else None
+        current_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).all()
+        active_jobs = [
+            {
+                "id": j.id,
+                "filename": j.media_file.filename if j.media_file else "Unknown"
+            }
+            for j in current_jobs if j.media_file
+        ]
 
         return {
             "is_running": worker.is_running,
@@ -98,10 +104,7 @@ def get_service_status():
             "verified_files": verified_files,
             "flagged_files": flagged_files,
             "pending_jobs_count": pending_jobs,
-            "active_job": {
-                "id": current_job.id if current_job else None,
-                "filename": active_filename
-            } if current_job else None
+            "active_jobs": active_jobs
         }
     finally:
         db.close()

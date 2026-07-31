@@ -12,7 +12,9 @@ def test_sanitize_title():
         "Breaking Bad S01E01 Pilot WEB-DL x265": "Breaking Bad",
         "Inception.2010.1080p.BluRay.x264-FGT": "Inception 2010",
         "Melissa & Joey - S01E09 - Seoul Man WEBDL-1080p": "Melissa & Joey",
-        "The.Simpsons.S30E05.720p.HDTV.x264": "The Simpsons"
+        "The.Simpsons.S30E05.720p.HDTV.x264": "The Simpsons",
+        "the.big.bang.theory.1011.hdtv-lol": "the big bang theory",
+        "The.Big.Bang.Theory.S10E23.HDTV.x264-SVA": "The Big Bang Theory"
     }
     
     for raw, expected in test_cases.items():

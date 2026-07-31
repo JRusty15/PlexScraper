@@ -57,10 +57,43 @@ class QueueWorker:
         logger.info("QueueWorker resumed.")
 
     async def _process_queue_loop(self):
-        """Pulls and runs jobs sequentially from SQLite database."""
+        """Pulls and runs jobs concurrently from SQLite database up to MAX_CONCURRENT_JOBS."""
+        import os
+        max_concurrent = int(os.environ.get("MAX_CONCURRENT_JOBS", "3"))
+        semaphore = asyncio.Semaphore(max_concurrent)
+        active_tasks = set()
+
+        logger.info(f"QueueWorker loop started. Concurrency limit: {max_concurrent} parallel jobs.")
+
+        async def worker_wrapper(job_id, media_file_id):
+            async with semaphore:
+                # Create a fresh DB session inside the worker coroutine
+                db: Session = SessionLocal()
+                try:
+                    # Reload objects in the new session context
+                    job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
+                    if not job:
+                        return
+                    media_file = job.media_file
+                    
+                    logger.info(f"Starting parallel Job #{job.id} for File: {media_file.filename}")
+                    await self._run_audit_pipeline(db, media_file, job)
+                except Exception as e:
+                    logger.error(f"Error executing parallel job #{job_id}: {e}")
+                finally:
+                    db.close()
+
         while self.is_running:
             if self.is_paused:
                 await asyncio.sleep(1.0)
+                continue
+
+            # Clean up finished tasks from active tracker set
+            active_tasks = {t for t in active_tasks if not t.done()}
+
+            if len(active_tasks) >= max_concurrent:
+                # Wait for at least one active job to complete before checking queue
+                await asyncio.sleep(0.5)
                 continue
 
             db: Session = SessionLocal()
@@ -69,7 +102,7 @@ class QueueWorker:
                 job = db.query(AuditJob).filter(AuditJob.status == JobStatus.PENDING).order_by(AuditJob.created_at.asc()).first()
                 
                 if not job:
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.5)
                     continue
 
                 # Mark job as processing
@@ -78,18 +111,21 @@ class QueueWorker:
                 media_file.status = FileStatus.VERIFYING
                 db.commit()
 
-                logger.info(f"Processing Job #{job.id} for File: {media_file.filename}")
-                
-                # Perform the Audit
-                await self._run_audit_pipeline(db, media_file, job)
+                # Dispatch concurrent async task wrapper
+                task = asyncio.create_task(worker_wrapper(job.id, media_file.id))
+                active_tasks.add(task)
                 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in queue loop: {e}")
+                logger.error(f"Error in queue loop scheduler: {e}")
                 await asyncio.sleep(2.0)
             finally:
                 db.close()
+
+        # Graceful teardown: await any outstanding active tasks before exit
+        if active_tasks:
+            await asyncio.gather(*active_tasks, return_exceptions=True)
 
     async def _run_audit_pipeline(self, db: Session, media_file: MediaFile, job: AuditJob):
         """Pipeline sequence: metadata probe, keyframe generation, audio extraction, AI validation."""

@@ -344,8 +344,9 @@
                 document.getElementById('stat-pending').innerText = data.pending_jobs_count;
                 
                 let statusText = "Status: Idle";
-                if (data.active_job) {
-                    statusText = `Status: Processing [${data.active_job.filename}]`;
+                if (data.active_jobs && data.active_jobs.length > 0) {
+                    const names = data.active_jobs.map(j => j.filename).join(" | ");
+                    statusText = `Status: Processing [${names}]`;
                 } else if (data.is_paused) {
                     statusText = "Status: Paused";
                 }
