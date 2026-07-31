@@ -14,25 +14,36 @@ class AIVerifier:
     def __init__(self, workspace_root: str = "."):
         self.workspace_root = Path(workspace_root)
 
-    def _encode_image(self, image_rel_path: str) -> str:
-        """Converts a relative web URL keyframe path back to local path and encodes to base64."""
-        # /static/media/keyframes/media_1_pct_5.jpg -> app/static/media/keyframes/media_1_pct_5.jpg
-        clean_path = image_rel_path.lstrip("/")
-        # The physical file resides inside the processed_media/ directory relative to workspace root
-        # /static/media/ translates to processed_media
-        local_filename = clean_path.split("/")[-1]
+    def _sanitize_title(self, raw_title: str) -> str:
+        """Sanitizes titles by removing common release tags, codecs, resolution flags, and bracket text."""
+        import re
+        # Remove anything in brackets or parentheses
+        clean = re.sub(r'\[[^\]]*\]|\([^\)]*\)', '', raw_title)
         
-        # Let's search inside workspace/processed_media/keyframes
-        local_path = self.workspace_root / "processed_media" / "keyframes" / local_filename
-        if not local_path.exists():
-            raise FileNotFoundError(f"Keyframe image not found at {local_path}")
+        # Remove technical keywords and standard file properties (case-insensitive)
+        tech_patterns = [
+            r'\b\d{3,4}p\b', r'\bhevc\b', r'\bx26[45]\b', r'\bbluray\b', r'\bdvdrip\b',
+            r'\bremux\b', r'\bdts\b', r'\bma\b', r'\bavc\b', r'\bopus\b', r'\bhdr\b',
+            r'\bweb-dl\b', r'\bwebdl\b', r'\bhdtv\b', r'\brip\b', r'\baxxo\b', r'\bcodec\b'
+        ]
+        for pattern in tech_patterns:
+            clean = re.sub(pattern, '', clean, flags=re.IGNORECASE)
             
-        with open(local_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+        # Clean up double spaces/dots/dashes
+        clean = re.sub(r'[\.\-_]', ' ', clean)
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        
+        # If it's a TV show with episode markers (e.g. S01E01 or 1x01), extract the show title prefix
+        show_match = re.split(r'\bs\d{2}e\d{2}\b|\b\d+x\d+\b', clean, flags=re.IGNORECASE)
+        if show_match and len(show_match) > 1 and show_match[0].strip():
+            clean = show_match[0].strip()
+            
+        return clean or raw_title
 
     async def verify_visuals(self, keyframe_paths: list, expected_title: str, metadata: dict = None) -> dict:
         """Runs Qwen2.5-VL via Ollama API to verify title cards, credits, and visual context."""
-        logger.info(f"=== AI Visual Verification Started for expected title: '{expected_title}' ===")
+        clean_title = self._sanitize_title(expected_title)
+        logger.info(f"=== AI Visual Verification Started (Raw: '{expected_title}', Sanitized: '{clean_title}') ===")
         results = {
             "title_verified": False,
             "credits_verified": False,
@@ -50,7 +61,8 @@ class AIVerifier:
             images_b64 = [self._encode_image(p) for p in early_keyframes]
             prompt = (
                 f"Analyze these {len(early_keyframes)} early images from the beginning of a video. "
-                f"Is the title '{expected_title}' displayed or visible as text on screen in any of these frames? "
+                f"Is the title '{clean_title}' (or a closely related variant representing the show/movie) "
+                f"displayed or visible as overlay text on screen in any of these frames? "
                 f"Look closely at title cards, opening credits, or overlay text. "
                 f"Respond with a JSON object: {{\"title_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
             )
@@ -112,12 +124,12 @@ class AIVerifier:
                 mid_keyframes = keyframe_paths[5:11]  # middle 6 keyframes
                 images_b64 = [self._encode_image(p) for p in mid_keyframes]
                 prompt = (
-                    f"You are verifying if a video file matches its expected title: '{expected_title}'.{meta_str}\n\n"
+                    f"You are verifying if a video file matches its expected title: '{clean_title}'.{meta_str}\n\n"
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
                     f"1. Identify the setting, genre, and any recognizable actors, characters, or specific movies/shows.\n"
-                    f"2. Assess whether this visual content is consistent with the expected title '{expected_title}' and the metadata guidelines above. "
-                    f"State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{expected_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
-                    f"If the expected title '{expected_title}' is generic or unknown to you, does the content look like a valid movie/show scene (e.g. contains actors, normal settings, or animation, and is not a blank screen, test pattern, static, or corrupt video)?\n"
+                    f"2. Assess whether this visual content is consistent with the expected title '{clean_title}' or its franchise, and the metadata guidelines above. "
+                    f"State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{clean_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
+                    f"If the expected title '{clean_title}' is generic or unknown to you, does the content look like a valid movie/show scene (e.g. contains actors, normal settings, or animation, and is not a blank screen, test pattern, static, or corrupt video)?\n"
                     f"Respond with a JSON object:\n"
                     f"{{\n"
                     f"  \"content_matches\": true/false,\n"
@@ -135,7 +147,7 @@ class AIVerifier:
                 img_b64 = self._encode_image(keyframe_paths[len(keyframe_paths)//2])
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
-                    f"media file titled '{expected_title}'? Answer with a JSON object: "
+                    f"media file titled '{clean_title}'? Answer with a JSON object: "
                     f"{{\"content_matches\": true/false, \"confidence\": 0.0-1.0, \"description\": \"brief summary of the scene\", \"reason\": \"string\"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
