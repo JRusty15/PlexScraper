@@ -163,7 +163,8 @@ def get_files(status: str | None = None, page: int = 1, page_size: int = 50, sea
         
         # Apply pagination offsets
         offset = (page - 1) * page_size
-        files = query.order_by(MediaFile.added_at.desc()).offset(offset).limit(page_size).all()
+        from sqlalchemy.orm import joinedload
+        files = query.options(joinedload(MediaFile.results)).order_by(MediaFile.added_at.desc()).offset(offset).limit(page_size).all()
         
         result_list = []
         if files:
@@ -183,13 +184,14 @@ def get_files(status: str | None = None, page: int = 1, page_size: int = 50, sea
                 (AuditResult.audited_at == subq.c.max_audited_at)
             ).all()
             
-            # Map media_file_id to its latest result
-            results_map = {res.media_file_id: res for res in latest_results}
-        else:
-            results_map = {}
-            
         for f in files:
-            latest_res = results_map.get(f.id)
+            # Get latest audit result from preloaded list in memory to avoid queries
+            latest_res = None
+            if f.results:
+                # Sort preloaded results list in memory
+                sorted_res = sorted(f.results, key=lambda r: r.audited_at, reverse=True)
+                latest_res = sorted_res[0]
+                
             res_data = None
             if latest_res:
                 res_data = {
