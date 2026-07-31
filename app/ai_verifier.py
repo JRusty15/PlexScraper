@@ -186,6 +186,10 @@ class AIVerifier:
                     "images": images_b64
                 }
             ],
+            "options": {
+                "num_ctx": 16384,
+                "temperature": 0.2
+            },
             "stream": False
         }
         
