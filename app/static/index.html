@@ -198,52 +198,6 @@
                         <!-- Keyframes injected here -->
                     </div>
                 </div>
-
-                <div class="details-layout">
-                    <!-- Left: Metadata & Logs -->
-                    <div class="details-info">
-                        <div class="info-section">
-                            <h4>File Path</h4>
-                            <p id="modal-filepath" class="path-text"></p>
-                        </div>
-                        <div class="info-section">
-                            <h4>Media Details</h4>
-                            <div class="meta-row">
-                                <div><strong>Expected Duration:</strong> <span id="modal-expected-duration">-</span></div>
-                                <div><strong>Actual Duration:</strong> <span id="modal-actual-duration">-</span></div>
-                                <div><strong>Variance:</strong> <span id="modal-variance">-</span></div>
-                            </div>
-                            <div class="meta-row" style="margin-top: 0.5rem;">
-                                <div><strong>Video Codec:</strong> <span id="modal-video-codec">-</span></div>
-                                <div><strong>Audio Codec:</strong> <span id="modal-audio-codec">-</span></div>
-                                <div><strong>Container:</strong> <span id="modal-container">-</span></div>
-                            </div>
-                        </div>
-                        <div class="info-section">
-                            <h4>AI Visual Logs (Qwen2.5-VL)</h4>
-                            <p id="modal-notes" style="font-size: 0.85rem; line-height: 1.4; white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);"></p>
-                        </div>
-                        <div class="info-section">
-                            <h4>Audio Speech & Languages</h4>
-                            <div class="meta-row">
-                                <div><strong>Languages Detected:</strong> <span id="modal-languages">-</span></div>
-                            </div>
-                            <p id="modal-transcript" style="font-size: 0.85rem; font-style: italic; color: var(--text-secondary); margin-top: 0.5rem; background: rgba(0,0,0,0.1); padding: 0.5rem; border-radius: 4px; border-left: 3px solid var(--border-color);"></p>
-                        </div>
-                    </div>
-
-                    <!-- Right: Visual/Audio Captures -->
-                    <div class="details-media">
-                        <h4>Extracted Keyframes</h4>
-                        <div class="keyframes-grid" id="modal-keyframes-container">
-                            <!-- Populated dynamically -->
-                        </div>
-                        <h4 style="margin-top: 1.5rem;">Extracted Audio Clips</h4>
-                        <div class="audio-list" id="modal-audio-container">
-                            <!-- Populated dynamically -->
-                        </div>
-                    </div>
-                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="modal-btn-rescan" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Rescan File</button>
