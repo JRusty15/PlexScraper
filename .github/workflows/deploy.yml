@@ -1,0 +1,41 @@
+name: Local Docker Auto-Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build local Docker image
+        run: |
+          docker build -t plexscraper-verifier:latest .
+
+      - name: Stop and recreate container
+        run: |
+          # If the container exists, stop and remove it
+          if [ "$(docker ps -aq -f name=plex-verifier)" ]; then
+            echo "Stopping old container..."
+            docker stop plex-verifier
+            docker rm plex-verifier
+          fi
+          
+          echo "Starting updated container..."
+          # Start the new container using the same parameters from docker-compose
+          docker run -d \
+            --name plex-verifier \
+            --restart unless-stopped \
+            -p 8000:8000 \
+            -e DATABASE_URL="sqlite:////app/data/plex_verification.db" \
+            -e OLLAMA_API_URL="http://10.0.0.242:11434" \
+            -e OLLAMA_MODEL="qwen2.5-vl" \
+            -e SCAN_PATHS="/media" \
+            -v "/opt/plexscraper/data:/app/data" \
+            -v "/opt/plexscraper/processed_media:/app/processed_media" \
+            -v "/mnt/user/Media/Movies:/media" \
+            plexscraper-verifier:latest
