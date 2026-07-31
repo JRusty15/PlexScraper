@@ -26,16 +26,22 @@ class AIVerifier:
             return base64.b64encode(image_file.read()).decode("utf-8")
 
     def _sanitize_title(self, raw_title: str) -> str:
-        """Sanitizes titles by removing common release tags, codecs, resolution flags, and bracket text."""
+        """Sanitizes titles by removing file extensions, common release tags, codecs, resolution flags, and bracket text."""
         import re
-        # Remove anything in brackets or parentheses
-        clean = re.sub(r'\[[^\]]*\]|\([^\)]*\)', '', raw_title)
         
-        # Remove technical keywords and standard file properties (case-insensitive)
+        # Remove file extension if present (e.g. .mkv, .mp4)
+        clean = re.sub(r'\.[a-zA-Z0-9]{3,4}$', '', raw_title)
+        
+        # Remove anything in brackets or parentheses
+        clean = re.sub(r'\[[^\]]*\]|\([^\)]*\)', '', clean)
+        
+        # Remove technical keywords, scene tags, and release descriptors (case-insensitive)
         tech_patterns = [
             r'\b\d{3,4}p\b', r'\bhevc\b', r'\bx26[45]\b', r'\bbluray\b', r'\bdvdrip\b',
             r'\bremux\b', r'\bdts\b', r'\bma\b', r'\bavc\b', r'\bopus\b', r'\bhdr\b',
-            r'\bweb-dl\b', r'\bwebdl\b', r'\bhdtv\b', r'\brip\b', r'\baxxo\b', r'\bcodec\b'
+            r'\bweb-dl\b', r'\bwebdl\b', r'\bhdtv\b', r'\brip\b', r'\baxxo\b', r'\bcodec\b',
+            r'\b3d\b', r'\bproper\b', r'\brepack\b', r'\bunrated\b', r'\bdirector(s)?\s+cut\b',
+            r'\bextended\b', r'\blimited\b', r'\bmulti\b', r'\bsub(s)?\b', r'\bdual\b'
         ]
         for pattern in tech_patterns:
             clean = re.sub(pattern, '', clean, flags=re.IGNORECASE)
@@ -43,8 +49,8 @@ class AIVerifier:
         # Clean up double spaces/dots/dashes
         clean = re.sub(r'[\.\-_]', ' ', clean)
         
-        # Strip trailing release tags (e.g., "FGT", "RARBG", "YTS", "Esub" at the end of the line)
-        clean = re.sub(r'\b(fgt|rarbg|yts|esub|psa|hevc|x264|x265)\b\s*$', '', clean, flags=re.IGNORECASE)
+        # Strip trailing release groups (e.g., "-GLASSES", "-RARBG", "-YTS", "-FGT", etc.)
+        clean = re.sub(r'\b(fgt|rarbg|yts|esub|psa|hevc|x264|x265|glasses|evo|amiable)\b\s*$', '', clean, flags=re.IGNORECASE)
         
         clean = re.sub(r'\s+', ' ', clean).strip()
         
@@ -148,7 +154,7 @@ class AIVerifier:
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
                     f"1. Identify the setting, genre, and any recognizable actors, characters, or specific movies/shows.\n"
                     f"2. Assess whether this visual content is consistent with the expected title '{clean_title}' or its franchise, and the metadata guidelines above. "
-                    f"If key actors listed above (e.g. key cast) are clearly visible in these scenes, explain this in the reason.\n"
+                    f"If the environment, setting, characters, or cast members generally match the expected show/movie aesthetic, mark 'content_matches: true'. Do not reject simply because the frames show a different scene or different cast members than described in the plot summary (as these images represent only a tiny sample of the entire media file).\n"
                     f"3. State if there is any active contradiction (e.g. the expected title is a sitcom, but the scenes show a medieval battle; or the expected title is '{clean_title}', but the images clearly show characters and settings from a completely different recognizable movie/show).\n"
                     f"If the expected title '{clean_title}' is generic or unknown to you, does the content look like a valid movie/show scene (e.g. contains actors, normal settings, or animation, and is not a blank screen, test pattern, static, or corrupt video)?\n"
                     f"Respond with a JSON object:\n"
