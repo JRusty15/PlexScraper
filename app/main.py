@@ -142,8 +142,15 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
 @app.get("/api/files")
-def get_files(status: str | None = None, page: int = 1, page_size: int = 20, search: str | None = None):
-    """Retrieves tracked media files with pagination and search parameters."""
+def get_files(
+    status: str | None = None, 
+    page: int = 1, 
+    page_size: int = 20, 
+    search: str | None = None,
+    sort_by: str | None = "added_at",
+    sort_order: str | None = "desc"
+):
+    """Retrieves tracked media files with pagination, search, and sorting parameters."""
     db = SessionLocal()
     try:
         query = db.query(MediaFile)
@@ -161,10 +168,44 @@ def get_files(status: str | None = None, page: int = 1, page_size: int = 20, sea
         # Get total count for UI pagination details
         total_count = query.count()
         
+        # Apply Sorting
+        # For sorting by confidence, we need to join the latest AuditResult
+        if sort_by == "confidence":
+            from app.database import AuditResult
+            from sqlalchemy import func
+            
+            # Subquery to get latest audit result per media file
+            subq = db.query(
+                AuditResult.media_file_id,
+                func.max(AuditResult.audited_at).label("max_audited_at")
+            ).group_by(AuditResult.media_file_id).subquery()
+            
+            # Join query with AuditResult
+            query = query.outerjoin(
+                AuditResult, 
+                (MediaFile.id == AuditResult.media_file_id)
+            ).outerjoin(
+                subq,
+                (AuditResult.media_file_id == subq.c.media_file_id) &
+                (AuditResult.audited_at == subq.c.max_audited_at)
+            )
+            
+            if sort_order == "asc":
+                # Put nulls/no-audit items at the end
+                query = query.order_by(AuditResult.confidence_score.asc().nullslast())
+            else:
+                query = query.order_by(AuditResult.confidence_score.desc().nullslast())
+        else:
+            # Default sorting by added_at
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.added_at.asc())
+            else:
+                query = query.order_by(MediaFile.added_at.desc())
+
         # Apply pagination offsets
         offset = (page - 1) * page_size
         from sqlalchemy.orm import joinedload
-        files = query.options(joinedload(MediaFile.results)).order_by(MediaFile.added_at.desc()).offset(offset).limit(page_size).all()
+        files = query.options(joinedload(MediaFile.results)).offset(offset).limit(page_size).all()
         
         result_list = []
         if files:

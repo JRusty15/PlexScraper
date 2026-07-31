@@ -86,7 +86,7 @@
                                 <th>Media Path</th>
                                 <th>Runtime (Plex/Actual)</th>
                                 <th>Status</th>
-                                <th>Confidence</th>
+                                <th onclick="toggleSort('confidence')" style="cursor: pointer; user-select: none;">Confidence <span id="sort-indicator-confidence" style="font-size: 0.75rem;">↕</span></th>
                                 <th>Last Audited</th>
                                 <th>Actions</th>
                             </tr>
@@ -218,6 +218,8 @@
         let totalItemsCount = 0;
         let searchTimeout = null;
         let currentView = 'dashboard';
+        let currentSortBy = 'added_at';
+        let currentSortOrder = 'desc';
 
         function loadStateFromURL() {
             const params = new URLSearchParams(window.location.search);
@@ -232,6 +234,11 @@
                 const sizeSelect = document.getElementById('page-size-select');
                 if (sizeSelect) sizeSelect.value = pageSize.toString();
             }
+            
+            // Set dynamic sort values
+            currentSortBy = params.get('sort_by') || 'added_at';
+            currentSortOrder = params.get('sort_order') || 'desc';
+            updateSortIndicatorUI();
             
             const pageParam = params.get('page');
             currentPage = pageParam ? parseInt(pageParam, 10) : 1;
@@ -250,6 +257,29 @@
             const filterBtn = document.getElementById(`btn-filter-${currentStatusFilter}`);
             if (filterBtn) {
                 filterBtn.classList.add('active');
+            }
+        }
+
+        function toggleSort(field) {
+            if (currentSortBy === field) {
+                currentSortOrder = (currentSortOrder === 'desc') ? 'asc' : 'desc';
+            } else {
+                currentSortBy = field;
+                currentSortOrder = 'desc';
+            }
+            currentPage = 1; // reset page
+            updateSortIndicatorUI();
+            updateURL();
+            fetchFiles(true);
+        }
+
+        function updateSortIndicatorUI() {
+            const indicator = document.getElementById('sort-indicator-confidence');
+            if (!indicator) return;
+            if (currentSortBy === 'confidence') {
+                indicator.innerText = (currentSortOrder === 'desc') ? '▼' : '▲';
+            } else {
+                indicator.innerText = '↕';
             }
         }
 
@@ -273,6 +303,12 @@
             }
             if (pageSize !== 20) {
                 params.set('page_size', pageSize);
+            }
+            if (currentSortBy !== 'added_at') {
+                params.set('sort_by', currentSortBy);
+            }
+            if (currentSortOrder !== 'desc') {
+                params.set('sort_order', currentSortOrder);
             }
             if (currentSearchQuery) {
                 params.set('search', currentSearchQuery);
@@ -321,7 +357,7 @@
                 if (showSkeleton) {
                     renderSkeletonTable();
                 }
-                let url = `/api/files?page=${currentPage}&page_size=${pageSize}`;
+                let url = `/api/files?page=${currentPage}&page_size=${pageSize}&sort_by=${currentSortBy}&sort_order=${currentSortOrder}`;
                 if (currentStatusFilter !== 'all') {
                     url += `&status=${currentStatusFilter}`;
                 }
