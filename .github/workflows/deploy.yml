@@ -40,3 +40,45 @@ jobs:
             -v "/mnt/unraid/movies:/media/Movies" \
             -v "/mnt/unraid/tv:/media/TV" \
             plexscraper-verifier:latest
+
+      - name: Send Discord Deployment Notification
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B | tr -d '\n' | tr -d '"')
+          AUTHOR=$(git log -1 --pretty=%an)
+          
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "🚀 PlexScraper Auto-Deployed Successfully!",
+              "color": 3066993,
+              "fields": [
+                {
+                  "name": "Branch",
+                  "value": "`${{ github.ref_name }}`",
+                  "inline": true
+                },
+                {
+                  "name": "Author",
+                  "value": "$AUTHOR",
+                  "inline": true
+                },
+                {
+                  "name": "Latest Commit",
+                  "value": "$COMMIT_MSG",
+                  "inline": false
+                },
+                {
+                  "name": "Status",
+                  "value": "✅ Running locally on Portainer (`plex-verifier`)",
+                  "inline": false
+                }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
+          }
+          EOF
+          )
+          
+          curl -H "Content-Type: application/json" \
+               -d "$PAYLOAD" \
+               https://discord.com/api/webhooks/1532893949059010591/E_Q_S8DXEygMLgRFsJpqbrrwz5vNXth0p6pQNHylEU21nO0Z3GoI9qsBRblDGx1QXGek
