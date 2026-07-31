@@ -191,10 +191,11 @@ def get_files(
             )
             
             if sort_order == "asc":
-                # Put nulls/no-audit items at the end
-                query = query.order_by(AuditResult.confidence_score.asc().nullslast())
+                # Standard ascending sort
+                query = query.order_by(AuditResult.confidence_score.asc())
             else:
-                query = query.order_by(AuditResult.confidence_score.desc().nullslast())
+                # Standard descending sort
+                query = query.order_by(AuditResult.confidence_score.desc())
         else:
             # Default sorting by added_at
             if sort_order == "asc":
@@ -208,23 +209,6 @@ def get_files(
         files = query.options(joinedload(MediaFile.results)).offset(offset).limit(page_size).all()
         
         result_list = []
-        if files:
-            file_ids = [f.id for f in files]
-            from sqlalchemy import func
-            
-            # Subquery to get max audited_at per media_file_id
-            subq = db.query(
-                AuditResult.media_file_id,
-                func.max(AuditResult.audited_at).label("max_audited_at")
-            ).filter(AuditResult.media_file_id.in_(file_ids)).group_by(AuditResult.media_file_id).subquery()
-            
-            # Join with the subquery to fetch the latest audit results
-            latest_results = db.query(AuditResult).join(
-                subq,
-                (AuditResult.media_file_id == subq.c.media_file_id) &
-                (AuditResult.audited_at == subq.c.max_audited_at)
-            ).all()
-            
         for f in files:
             # Get latest audit result from preloaded list in memory to avoid queries
             latest_res = None
