@@ -21,10 +21,24 @@
                 <button class="nav-link active" id="tab-dashboard" onclick="switchView('dashboard')">Dashboard</button>
                 <button class="nav-link" id="tab-settings" onclick="switchView('settings')">Settings</button>
             </nav>
-            <div class="pipeline-controls">
+            <div class="pipeline-controls" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                 <span class="pipeline-badge" id="pipeline-status">Status: Idle</span>
+                
+                <!-- Bulk Requeue Selector -->
+                <div class="bulk-requeue-group" style="display: flex; align-items: center; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.25rem 0.5rem; gap: 0.5rem;">
+                    <select id="bulk-requeue-status" style="background: transparent; border: none; color: var(--text-primary); font-family: inherit; font-size: 0.8rem; outline: none; cursor: pointer;">
+                        <option value="FLAGGED_TITLE" style="background: var(--bg-base);">Flagged Title</option>
+                        <option value="FLAGGED_DURATION" style="background: var(--bg-base);">Flagged Duration</option>
+                        <option value="FLAGGED_LANGUAGE" style="background: var(--bg-base);">Flagged Language</option>
+                        <option value="FLAGGED_CORRUPT" style="background: var(--bg-base);">Flagged Corrupt</option>
+                        <option value="FAILED" style="background: var(--bg-base);">Failed</option>
+                    </select>
+                    <button class="action-btn" onclick="bulkRequeue()" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">Requeue State</button>
+                </div>
+
                 <button class="btn btn-primary" id="btn-scan" onclick="triggerScan()">Scan Directories</button>
                 <button class="btn btn-secondary" id="btn-pause" onclick="togglePause()">Pause Queue</button>
+                <button class="btn btn-danger" onclick="nukePipeline()" style="background-color: var(--danger); color: white;">Nuke Queue</button>
             </div>
         </header>
 
@@ -476,6 +490,23 @@
             } catch (err) {
                 console.error(err);
                 showToast("Failed to requeue file.", 'error');
+            }
+        }
+
+        async function bulkRequeue() {
+            const status = document.getElementById('bulk-requeue-status').value;
+            if (!confirm(`Are you sure you want to reset the state of ALL files currently marked as ${status} and place them back in the queue?`)) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/pipeline/requeue-by-status?status=${status}`, { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || "Status reset complete.", 'success');
+                await fetchFiles(true);
+                await fetchStatus();
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to bulk requeue files.", 'error');
             }
         }
 

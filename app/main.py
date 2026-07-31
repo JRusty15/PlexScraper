@@ -252,6 +252,30 @@ def requeue_file(file_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"File {media_file.filename} requeued."}
 
+@app.post("/api/pipeline/requeue-by-status")
+def requeue_by_status(status: str, db: Session = Depends(get_db)):
+    """Bulk resets the status of all files matching a specific state and adds them back to the queue."""
+    # Find matching files
+    files = db.query(MediaFile).filter(MediaFile.status == status).all()
+    if not files:
+        return {"message": f"No files found with status '{status}'."}
+        
+    # Requeue each file
+    count = 0
+    for f in files:
+        f.status = FileStatus.PENDING
+        job = AuditJob(
+            media_file_id=f.id,
+            status=JobStatus.PENDING
+        )
+        db.add(job)
+        count += 1
+        
+    db.commit()
+    # Trigger worker to ensure it starts processing
+    worker.start()
+    return {"message": f"Successfully requeued {count} files in status '{status}'."}
+
 @app.post("/api/files/{file_id}/manual-verify")
 def manual_verify_file(file_id: int, db: Session = Depends(get_db)):
     """Manually marks a file as verified."""
