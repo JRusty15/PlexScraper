@@ -99,7 +99,20 @@
 
                 <!-- Pagination Toolbar -->
                 <div class="pagination-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
-                    <span id="pagination-info" style="font-size: 0.85rem; color: var(--text-secondary);">Showing 0 to 0 of 0 files</span>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span id="pagination-info" style="font-size: 0.85rem; color: var(--text-secondary);">Showing 0 to 0 of 0 files</span>
+                        
+                        <!-- Page Size Selector -->
+                        <div style="display: flex; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.2rem 0.5rem; gap: 0.35rem;">
+                            <label for="page-size-select" style="font-size: 0.75rem; color: var(--text-secondary);">Show:</label>
+                            <select id="page-size-select" onchange="changePageSize()" style="background: transparent; border: none; color: var(--text-primary); font-family: inherit; font-size: 0.75rem; outline: none; cursor: pointer;">
+                                <option value="20" style="background: var(--bg-base);">20</option>
+                                <option value="50" style="background: var(--bg-base);">50</option>
+                                <option value="100" style="background: var(--bg-base);">100</option>
+                                <option value="250" style="background: var(--bg-base);">250</option>
+                            </select>
+                        </div>
+                    </div>
                     <div style="display: flex; gap: 0.5rem;">
                         <button class="btn btn-secondary btn-sm" id="btn-prev" onclick="prevPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Previous</button>
                         <button class="btn btn-secondary btn-sm" id="btn-next" onclick="nextPage()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Next</button>
@@ -199,7 +212,7 @@
     <script>
         let filesData = [];
         let currentPage = 1;
-        const pageSize = 50;
+        let pageSize = 20; // Default to 20
         let currentStatusFilter = 'all';
         let currentSearchQuery = '';
         let totalItemsCount = 0;
@@ -211,6 +224,14 @@
             
             currentView = params.get('view') || 'dashboard';
             currentStatusFilter = params.get('status') || 'all';
+            
+            // Set dynamic page size from URL if present
+            const pageSizeParam = params.get('page_size');
+            if (pageSizeParam) {
+                pageSize = parseInt(pageSizeParam, 10) || 20;
+                const sizeSelect = document.getElementById('page-size-select');
+                if (sizeSelect) sizeSelect.value = pageSize.toString();
+            }
             
             const pageParam = params.get('page');
             currentPage = pageParam ? parseInt(pageParam, 10) : 1;
@@ -232,6 +253,13 @@
             }
         }
 
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('page-size-select').value, 10) || 20;
+            currentPage = 1; // reset page
+            updateURL();
+            fetchFiles(true);
+        }
+
         function updateURL() {
             const params = new URLSearchParams();
             if (currentView !== 'dashboard') {
@@ -242,6 +270,9 @@
             }
             if (currentPage !== 1) {
                 params.set('page', currentPage);
+            }
+            if (pageSize !== 20) {
+                params.set('page_size', pageSize);
             }
             if (currentSearchQuery) {
                 params.set('search', currentSearchQuery);

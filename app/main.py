@@ -142,7 +142,7 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
 @app.get("/api/files")
-def get_files(status: str | None = None, page: int = 1, page_size: int = 50, search: str | None = None):
+def get_files(status: str | None = None, page: int = 1, page_size: int = 20, search: str | None = None):
     """Retrieves tracked media files with pagination and search parameters."""
     db = SessionLocal()
     try:
