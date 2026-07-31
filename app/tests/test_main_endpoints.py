@@ -106,3 +106,46 @@ def test_get_failures_log(tmp_path, monkeypatch):
     response = client.get("/api/pipeline/failures-log")
     assert response.status_code == 200
     assert response.json()["log"] == log_content
+
+def test_scan_sample_files(tmp_path):
+    from app.scanner import MediaScanner
+    from app.database import MediaFile, FileStatus, AuditJob
+    
+    # Setup scanner directories
+    scan_dir = tmp_path / "media"
+    scan_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create a mock normal video file (empty)
+    movie_file = scan_dir / "Inception.2010.mkv"
+    movie_file.write_text("dummy content", encoding="utf-8")
+    
+    # Create a mock sample file (empty, which will have size < 150MB)
+    sample_file = scan_dir / "Inception.2010-sample.mkv"
+    sample_file.write_text("dummy content", encoding="utf-8")
+    
+    # Run scanner
+    scanner = MediaScanner(media_directories=[str(scan_dir)])
+    db = TestingSessionLocal()
+    
+    # Create tables
+    Base.metadata.create_all(bind=test_engine)
+    
+    count = scanner.scan_and_register_files(db)
+    assert count == 2
+    
+    # Query database to assert statuses
+    movie_record = db.query(MediaFile).filter(MediaFile.filename == "Inception.2010.mkv").first()
+    assert movie_record.status == FileStatus.PENDING
+    
+    # The normal file should have an active job enqueued
+    job_record = db.query(AuditJob).filter(AuditJob.media_file_id == movie_record.id).first()
+    assert job_record is not None
+    
+    sample_record = db.query(MediaFile).filter(MediaFile.filename == "Inception.2010-sample.mkv").first()
+    assert sample_record.status == FileStatus.FLAGGED_SAMPLE
+    
+    # The sample file should NOT have a job enqueued
+    sample_job = db.query(AuditJob).filter(AuditJob.media_file_id == sample_record.id).first()
+    assert sample_job is None
+    
+    db.close()
