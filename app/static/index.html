@@ -198,6 +198,15 @@
                         <!-- Keyframes injected here -->
                     </div>
                 </div>
+
+                <div class="modal-section">
+                    <h4>Audio & Language Audit (Whisper)</h4>
+                    <p><strong>Detected Language Track:</strong> <span id="audio-detected-lang">-</span></p>
+                    <div class="transcript-box">
+                        <h5>Audio Transcript Snippet</h5>
+                        <p id="audio-transcript" class="transcript-content" style="font-size: 0.85rem; font-style: italic; white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); margin-top: 0.5rem;"></p>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="modal-btn-rescan" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Rescan File</button>
@@ -828,41 +837,55 @@
                 } else {
                     kfContainer.innerHTML = `<p class="modal-desc">No keyframes extracted.</p>`;
                 }
-
-                // Audio
-                document.getElementById('audio-detected-lang').innerText = file.audit_result.detected_languages || 'Unknown';
-                document.getElementById('audio-transcript').innerText = file.audit_result.audio_transcript_snippet || 'No transcript generated.';
-
-                // Show raw VLM analysis logs if present
-                const vlmLogsContainer = document.getElementById('audio-transcript');
-                let vlmLogsHTML = file.audit_result.audio_transcript_snippet || 'No transcript generated.';
                 
-                // Let's format the VLM reasoning text
-                const vlmRaw = file.audit_result.vlm_raw_response ? JSON.parse(file.audit_result.vlm_raw_response) : [];
-                if (vlmRaw.length > 0) {
-                    vlmLogsHTML += "<br><br><strong>VLM Analysis Logs:</strong><br>";
-                    vlmRaw.forEach(log => {
-                        const step = log.stage ? log.stage.toUpperCase() : 'UNKNOWN';
-                        let details = "";
-                        if (log.response) {
-                            details = log.response.reason || log.response.raw_text_fallback || JSON.stringify(log.response);
-                        } else if (log.error) {
-                            details = `Error: ${log.error}`;
-                        }
-                        vlmLogsHTML += `• <em>${step}</em>: ${details}<br>`;
-                    });
+                // Audio
+                const langEl = document.getElementById('audio-detected-lang');
+                if (langEl) langEl.innerText = file.audit_result.detected_languages || 'Unknown';
+                
+                const transEl = document.getElementById('audio-transcript');
+                if (transEl) {
+                    let vlmLogsHTML = file.audit_result.audio_transcript_snippet || 'No transcript generated.';
+                    
+                    // Let's format the VLM reasoning text
+                    const vlmRaw = file.audit_result.vlm_raw_response ? JSON.parse(file.audit_result.vlm_raw_response) : [];
+                    if (vlmRaw.length > 0) {
+                        vlmLogsHTML += "<br><br><strong>VLM Analysis Logs:</strong><br>";
+                        vlmRaw.forEach(log => {
+                            const step = log.stage ? log.stage.toUpperCase() : 'UNKNOWN';
+                            let details = "";
+                            if (log.response) {
+                                details = log.response.reason || log.response.raw_text_fallback || JSON.stringify(log.response);
+                            } else if (log.error) {
+                                details = `Error: ${log.error}`;
+                            }
+                            vlmLogsHTML += `• <em>${step}</em>: ${details}<br>`;
+                        });
+                    }
+                    transEl.innerHTML = vlmLogsHTML;
                 }
-                document.getElementById('audio-transcript').innerHTML = vlmLogsHTML;
             } else {
-                document.getElementById('meta-container').innerText = '-';
-                document.getElementById('meta-vcodec').innerText = '-';
-                document.getElementById('meta-acodec').innerText = '-';
-                document.getElementById('meta-variance').innerText = '-';
-                document.getElementById('modal-keyframes').innerHTML = `<p class="modal-desc">Not audited yet.</p>`;
-                document.getElementById('audio-detected-lang').innerText = '-';
-                document.getElementById('audio-transcript').innerText = '';
+                const containerEl = document.getElementById('meta-container');
+                if (containerEl) containerEl.innerText = '-';
+                
+                const vcodecEl = document.getElementById('meta-vcodec');
+                if (vcodecEl) vcodecEl.innerText = '-';
+                
+                const acodecEl = document.getElementById('meta-acodec');
+                if (acodecEl) acodecEl.innerText = '-';
+                
+                const varianceEl = document.getElementById('meta-variance');
+                if (varianceEl) varianceEl.innerText = '-';
+                
+                const kfEl = document.getElementById('modal-keyframes');
+                if (kfEl) kfEl.innerHTML = `<p class="modal-desc">Not audited yet.</p>`;
+                
+                const langEl = document.getElementById('audio-detected-lang');
+                if (langEl) langEl.innerText = '-';
+                
+                const transEl = document.getElementById('audio-transcript');
+                if (transEl) transEl.innerText = '';
             }
-
+ 
             document.getElementById('details-modal').style.display = 'flex';
         }
 

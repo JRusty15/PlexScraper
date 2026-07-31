@@ -149,3 +149,32 @@ def test_scan_sample_files(tmp_path):
     assert sample_job is None
     
     db.close()
+
+def test_index_html_dom_elements():
+    """Asserts that index.html contains all expected DOM IDs to prevent JavaScript null reference errors."""
+    # Find static index.html path relative to app directory
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    index_path = os.path.join(base_dir, "app", "static", "index.html")
+    assert os.path.exists(index_path)
+    
+    with open(index_path, "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    required_ids = [
+        "modal-title",
+        "modal-status-badge",
+        "modal-confidence-badge",
+        "modal-notes",
+        "meta-container",
+        "meta-vcodec",
+        "meta-acodec",
+        "meta-variance",
+        "modal-keyframes",
+        "audio-detected-lang",
+        "audio-transcript",
+        "details-modal"
+    ]
+    
+    for element_id in required_ids:
+        # Simple string assertion checking for id attribute existence
+        assert f'id="{element_id}"' in content or f"id='{element_id}'" in content, f"Missing expected ID: {element_id}"
