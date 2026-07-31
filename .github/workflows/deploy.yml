@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 5 # Pull history so we can extract commit logs
 
       - name: Build local Docker image
         run: |
@@ -43,8 +45,16 @@ jobs:
 
       - name: Send Discord Deployment Notification
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B | tr -d '\n' | tr -d '"')
           AUTHOR=$(git log -1 --pretty=%an)
+          
+          # 1. Get list of files modified in the latest commit (limit to 10 lines)
+          MODIFIED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | head -n 10 | sed 's/^/• /' | tr '\n' '\\' | sed 's/\\/\\n/g')
+          if [ -z "$MODIFIED_FILES" ]; then
+            MODIFIED_FILES="No file modifications detected."
+          fi
+          
+          # 2. Get last 3 commits in this push (oneline log)
+          RECENT_COMMITS=$(git log -n 3 --oneline | sed 's/^/• /' | tr '\n' '\\' | sed 's/\\/\\n/g')
           
           PAYLOAD=$(cat <<EOF
           {
@@ -58,13 +68,18 @@ jobs:
                   "inline": true
                 },
                 {
-                  "name": "Author",
+                  "name": "Deploy Author",
                   "value": "$AUTHOR",
                   "inline": true
                 },
                 {
-                  "name": "Latest Commit",
-                  "value": "$COMMIT_MSG",
+                  "name": "Recent Commits",
+                  "value": "$RECENT_COMMITS",
+                  "inline": false
+                },
+                {
+                  "name": "Modified Files (Latest)",
+                  "value": "$MODIFIED_FILES",
                   "inline": false
                 },
                 {
