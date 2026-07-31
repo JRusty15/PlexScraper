@@ -148,10 +148,10 @@ def get_files(
     page_size: int = 20, 
     search: str | None = None,
     sort_by: str | None = "added_at",
-    sort_order: str | None = "desc"
+    sort_order: str | None = "desc",
+    db: Session = Depends(get_db)
 ):
     """Retrieves tracked media files with pagination, search, and sorting parameters."""
-    db = SessionLocal()
     try:
         query = db.query(MediaFile)
         
@@ -256,8 +256,9 @@ def get_files(
             "page_size": page_size,
             "items": result_list
         }
-    finally:
-        db.close()
+    except Exception as e:
+        logger.error(f"Error fetching files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/files/{file_id}/requeue")
 def requeue_file(file_id: int, db: Session = Depends(get_db)):

@@ -42,6 +42,10 @@ class AIVerifier:
             
         # Clean up double spaces/dots/dashes
         clean = re.sub(r'[\.\-_]', ' ', clean)
+        
+        # Strip trailing release tags (e.g., "FGT", "RARBG", "YTS", "Esub" at the end of the line)
+        clean = re.sub(r'\b(fgt|rarbg|yts|esub|psa|hevc|x264|x265)\b\s*$', '', clean, flags=re.IGNORECASE)
+        
         clean = re.sub(r'\s+', ' ', clean).strip()
         
         # If it's a TV show with episode markers (e.g. S01E01 or 1x01), extract the show title prefix

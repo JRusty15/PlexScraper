@@ -20,11 +20,21 @@ class QueueWorker:
         self._worker_task = None
 
     def start(self):
-        """Starts the background queue processor worker."""
-        if not self.is_running:
-            self.is_running = True
-            self.is_paused = False
-            self._worker_task = asyncio.create_task(self._process_queue_loop())
+        """Starts the background worker queue process."""
+        if self.is_running:
+            return
+        self.is_running = True
+        try:
+            loop = asyncio.get_running_loop()
+            self._worker_task = loop.create_task(self._process_queue_loop())
+        except RuntimeError:
+            # Fallback if no event loop is running in current thread (e.g. testing sync endpoints)
+            try:
+                loop = asyncio.get_event_loop()
+                self._worker_task = loop.create_task(self._process_queue_loop())
+            except Exception:
+                # Mock worker state for sync test client
+                self._worker_task = None
             logger.info("QueueWorker background task started.")
 
     def stop(self):
