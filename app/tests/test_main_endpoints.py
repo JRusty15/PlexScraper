@@ -88,3 +88,21 @@ def test_requeue_by_status():
     # Verify it is now PENDING
     resp_after = client.get("/api/files?status=FLAGGED_TITLE")
     assert resp_after.json()["total_items"] == 0
+
+def test_get_failures_log(tmp_path, monkeypatch):
+    # Setup mock failures.log content
+    log_content = "=== FAILURE LOG ===\nFile: test.mkv\nStatus: FLAGGED_TITLE\n"
+    
+    # Override main.WORKSPACE_ROOT temporarily for this test
+    monkeypatch.setattr(main, "WORKSPACE_ROOT", str(tmp_path))
+    
+    # Create the mock file
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    failures_file = data_dir / "failures.log"
+    failures_file.write_text(log_content, encoding="utf-8")
+    
+    # Make request
+    response = client.get("/api/pipeline/failures-log")
+    assert response.status_code == 200
+    assert response.json()["log"] == log_content
