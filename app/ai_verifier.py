@@ -154,9 +154,10 @@ class AIVerifier:
                 prompt = (
                     f"You are verifying if a video file matches its expected title: '{clean_title}'.{meta_str}\n\n"
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
-                    f"1. Identify the setting, genre, and style of the video (e.g. animation, live-action film, documentary, news, sitcom).\n"
-                    f"2. Evaluate if there is a CLEAR, ACTIVE CONTRADICTION between these scenes and the expected media '{clean_title}' (e.g., the expected title is a sci-fi blockbuster like '{clean_title}', but the images show a 2D cartoon or a cooking show; or the expected title is a drama, but the images show a sports broadcast or a video game stream).\n"
-                    f"3. NOTE: Normal cinematic movie or sitcom scenes (e.g. characters talking, walking, sitting in a living room, standing near a whiteboard with equations, in a comic book shop, or in generic offices) are completely normal and do NOT contradict the film/show. Do NOT confuse whiteboard equations or apartments in sitcoms like 'The Big Bang Theory' with classroom lectures, documentaries, or educational content. If you recognize any of the main cast/characters from the show '{clean_title}', or if the scenes show a live-action sitcom style that generally matches the expected show, you MUST mark 'content_matches: true'.\n"
+                    f"1. Identify the setting, genre, and style of the video.\n"
+                    f"2. Your task is to verify that these images are consistent with a standard movie or show of this general genre. You must be EXTREMELY LENIENT.\n"
+                    f"3. PASS BY DEFAULT: You should output 'content_matches: true' by default. Normal live-action scenes (e.g., characters talking in an office, kitchen, school classroom, sitting in a living room, walking on a street, or dark outdoor environments) are normal for films and match the expected media. Do NOT reject the file based on everyday settings, dark frames, or the lack of specific action points.\n"
+                    f"4. FLAGRANT CONTRADICTIONS ONLY: Only output 'content_matches: false' if there is an undeniable, obvious contradiction (e.g. the expected title is a live-action film like '{clean_title}', but the images show a 2D cartoon/anime, a sports match, a news broadcast, a cooking show, a video game, or a home renovation channel). If it looks like a normal live-action movie/show, you MUST set 'content_matches: true'.\n"
                     f"Respond with a JSON object:\n"
                     f"{{\n"
                     f"  \"content_matches\": true/false,\n"
@@ -174,8 +175,11 @@ class AIVerifier:
                 img_b64 = self._encode_image(keyframe_paths[len(keyframe_paths)//2])
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
-                    f"media file titled '{clean_title}'? Answer with a JSON object: "
-                    f"{{\"content_matches\": true/false, \"confidence\": 0.0-1.0, \"description\": \"brief summary of the scene\", \"reason\": \"string\"}}"
+                    f"media file titled '{clean_title}'?\n"
+                    f"You must be EXTREMELY LENIENT. Normal live-action scenes (e.g., characters talking, sitting in a room, walking) are normal for films. "
+                    f"Only set content_matches: false if there is an obvious contradiction (e.g. expected live-action but got a 2D cartoon or news report).\n"
+                    f"Answer with a JSON object: "
+                    f"{{\"content_matches\": true/false, \"confidence\": 0.0-1.0, \"description\": \"brief summary\", \"reason\": \"string\"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64)
