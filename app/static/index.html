@@ -195,7 +195,17 @@
                                   </div>
                               </div>
                           </div>
-                          <button class="btn btn-success" onclick="savePipelineConfig()" style="margin-top: 1.5rem; width: fit-content; padding: 0.5rem 1.25rem;">Save Config Preferences</button>
+                          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                              <button class="btn btn-success" onclick="savePipelineConfig()" style="width: fit-content; padding: 0.5rem 1.25rem;">Save Config Preferences</button>
+                              <button class="btn btn-secondary" id="btn-test-config" onclick="testPipelineConfig()" style="width: fit-content; padding: 0.5rem 1.25rem; background: rgba(255,255,255,0.08); border: 1px solid var(--border-color); color: var(--text-primary);">Test Connection Settings</button>
+                          </div>
+                          
+                          <div id="test-results-panel" style="display: none; margin-top: 1.25rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+                              <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; text-transform: uppercase; color: var(--accent);">Connection Test Results</h4>
+                              <div id="test-results-list" style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem;">
+                                  <!-- Filled dynamically -->
+                              </div>
+                          </div>
                       </div>
 
                       <div class="settings-card">
@@ -793,6 +803,106 @@
             } catch (err) {
                 console.error(err);
                 showToast("Failed to save settings.", 'error');
+            }
+        }
+
+        async function testPipelineConfig() {
+            const btn = document.getElementById('btn-test-config');
+            const originalText = btn.innerText;
+            btn.innerText = "Testing...";
+            btn.disabled = true;
+            
+            const resultsPanel = document.getElementById('test-results-panel');
+            const resultsList = document.getElementById('test-results-list');
+            resultsPanel.style.display = 'none';
+            resultsList.innerHTML = '';
+            
+            const ollamaUrl = document.getElementById('input-ollama-url').value;
+            const ollamaModel = document.getElementById('input-ollama-model').value;
+            const scanPaths = document.getElementById('input-scan-paths').value;
+            const plexUrl = document.getElementById('input-plex-url').value;
+            const plexToken = document.getElementById('input-plex-token').value;
+            
+            try {
+                const response = await fetch('/api/pipeline/config/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ollama_api_url: ollamaUrl,
+                        ollama_model: ollamaModel,
+                        scan_paths: scanPaths,
+                        plex_url: plexUrl,
+                        plex_token: plexToken
+                    })
+                });
+                
+                const data = await response.json();
+                resultsPanel.style.display = 'block';
+                
+                // 1. Ollama Result
+                const ollamaHTML = `
+                    <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                        <span style="color: ${data.ollama.success ? '#10b981' : '#ef4444'}; font-weight: bold;">
+                            ${data.ollama.success ? '✓' : '✗'}
+                        </span>
+                        <div>
+                            <strong>Ollama VLM integration:</strong> 
+                            <span style="color: var(--text-secondary);">${data.ollama.message}</span>
+                        </div>
+                    </div>
+                `;
+                resultsList.insertAdjacentHTML('beforeend', ollamaHTML);
+                
+                // 2. Plex Result
+                const plexHTML = `
+                    <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                        <span style="color: ${data.plex.success ? '#10b981' : '#ef4444'}; font-weight: bold;">
+                            ${data.plex.success ? '✓' : '✗'}
+                        </span>
+                        <div>
+                            <strong>Plex Server integration:</strong> 
+                            <span style="color: var(--text-secondary);">${data.plex.message}</span>
+                        </div>
+                    </div>
+                `;
+                resultsList.insertAdjacentHTML('beforeend', plexHTML);
+                
+                // 3. Paths Results
+                if (data.paths && data.paths.length > 0) {
+                    data.paths.forEach(p => {
+                        const pathHTML = `
+                            <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                                <span style="color: ${p.success ? '#10b981' : '#ef4444'}; font-weight: bold;">
+                                    ${p.success ? '✓' : '✗'}
+                                </span>
+                                <div>
+                                    <strong>Path "${p.path}":</strong> 
+                                    <span style="color: var(--text-secondary);">${p.message}</span>
+                                </div>
+                            </div>
+                        `;
+                        resultsList.insertAdjacentHTML('beforeend', pathHTML);
+                    });
+                } else {
+                    const noPathsHTML = `
+                        <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                            <span style="color: #ef4444; font-weight: bold;">✗</span>
+                            <div>
+                                <strong>Scan Paths:</strong> 
+                                <span style="color: var(--text-secondary);">No valid scan paths specified to verify.</span>
+                            </div>
+                        </div>
+                    `;
+                    resultsList.insertAdjacentHTML('beforeend', noPathsHTML);
+                }
+                
+                showToast("Connection tests completed.", 'info');
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to run connection tests.", 'error');
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
             }
         }
 

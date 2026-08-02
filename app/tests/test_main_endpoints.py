@@ -184,7 +184,10 @@ def test_index_html_dom_elements():
         "input-scan-paths",
         "input-workspace-root",
         "input-plex-url",
-        "input-plex-token"
+        "input-plex-token",
+        "btn-test-config",
+        "test-results-panel",
+        "test-results-list"
     ]
     
     for element_id in required_ids:
@@ -231,6 +234,71 @@ def test_pipeline_config_endpoints():
     assert updated_data["workspace_root"] == "./test_workspace"
     assert updated_data["plex_url"] == "http://plex-test:32400"
     assert updated_data["plex_token"] == "test-plex-token-xyz"
+
+def test_pipeline_config_validation_endpoint(monkeypatch):
+    # Mock httpx response for Ollama
+    class MockResponse:
+        def __init__(self, status_code, json_data):
+            self.status_code = status_code
+            self._json_data = json_data
+        def json(self):
+            return self._json_data
+            
+    async def mock_get(url):
+        return MockResponse(200, {"models": [{"name": "qwen2.5-vl:latest"}]})
+        
+    import httpx
+    monkeypatch.setattr(httpx.AsyncClient, "get", lambda *args, **kwargs: mock_get(args[1]))
+    
+    # Mock Plex connection
+    from plexapi import server
+    def mock_plex_server(url, token):
+        class MockServer:
+            class MockLibrary:
+                def sections(self):
+                    class MockSection:
+                        def __init__(self, title):
+                            self.title = title
+                    return [MockSection("Movies"), MockSection("TV Shows")]
+            def __init__(self, *args, **kwargs):
+                self.library = self.MockLibrary()
+        return MockServer(url, token)
+        
+    monkeypatch.setattr(server, "PlexServer", mock_plex_server)
+    
+    # Test POST request to validation endpoint
+    payload = {
+        "ollama_api_url": "http://mock-ollama:11434",
+        "ollama_model": "qwen2.5-vl",
+        "scan_paths": "./media_mock",
+        "plex_url": "http://mock-plex:32400",
+        "plex_token": "mock-token"
+    }
+    
+    # Create temp directory structure to test scan paths
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        mock_path = Path(tmp_dir) / "media_mock"
+        mock_path.mkdir()
+        payload["scan_paths"] = str(mock_path)
+        
+        response = client.post("/api/pipeline/config/test", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify Ollama check succeeded
+        assert data["ollama"]["success"] is True
+        assert "Connected successfully" in data["ollama"]["message"]
+        
+        # Verify Plex check succeeded
+        assert data["plex"]["success"] is True
+        assert "Movies" in data["plex"]["message"]
+        
+        # Verify scan path checked and accessible
+        assert len(data["paths"]) == 1
+        assert data["paths"][0]["path"] == str(mock_path)
+        assert data["paths"][0]["success"] is True
 
 def test_worker_start_resets_stale_jobs():
     from app.database import AuditJob, JobStatus, FileStatus

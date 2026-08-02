@@ -181,6 +181,102 @@ def update_pipeline_config(config: ConfigUpdateRequest, db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
 
+class ConfigTestRequest(BaseModel):
+    ollama_api_url: str
+    ollama_model: str
+    scan_paths: str
+    plex_url: str
+    plex_token: str
+
+@app.post("/api/pipeline/config/test")
+async def test_pipeline_config(config: ConfigTestRequest):
+    """Tests the provided configuration parameters before saving them."""
+    results = {
+        "ollama": {"success": False, "message": "Not tested"},
+        "plex": {"success": False, "message": "Not tested"},
+        "paths": []
+    }
+    
+    # 1. Test Ollama
+    try:
+        import httpx
+        url = config.ollama_api_url.rstrip("/")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{url}/api/tags")
+            if resp.status_code == 200:
+                models_list = resp.json().get("models", [])
+                models = [m.get("name") for m in models_list]
+                available_short = [m.split(":")[0] for m in models]
+                target_short = config.ollama_model.split(":")[0]
+                
+                if config.ollama_model in models or target_short in available_short:
+                    results["ollama"] = {
+                        "success": True, 
+                        "message": f"Connected successfully. Model '{config.ollama_model}' is available."
+                    }
+                else:
+                    results["ollama"] = {
+                        "success": False, 
+                        "message": f"Connected to Ollama, but model '{config.ollama_model}' was not found. Available models: {', '.join(models)}"
+                    }
+            else:
+                results["ollama"] = {
+                    "success": False, 
+                    "message": f"Ollama returned status {resp.status_code}"
+                }
+    except Exception as e:
+        results["ollama"] = {"success": False, "message": f"Connection failed: {str(e)}"}
+        
+    # 2. Test Plex
+    try:
+        if config.plex_url and config.plex_token:
+            from plexapi.server import PlexServer
+            import socket
+            orig_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(5.0)
+            try:
+                server = PlexServer(config.plex_url, config.plex_token)
+                library_sections = [s.title for s in server.library.sections()]
+                results["plex"] = {
+                    "success": True,
+                    "message": f"Connected successfully. Libraries: {', '.join(library_sections)}"
+                }
+            except Exception as pe:
+                results["plex"] = {"success": False, "message": f"Failed to connect: {str(pe)}"}
+            finally:
+                socket.setdefaulttimeout(orig_timeout)
+        else:
+            results["plex"] = {
+                "success": False,
+                "message": "Plex URL and Token must be provided."
+            }
+    except Exception as e:
+        results["plex"] = {"success": False, "message": f"Connection failed: {str(e)}"}
+        
+    # 3. Test Paths
+    scan_paths = config.scan_paths.split(",")
+    for path in scan_paths:
+        path = path.strip()
+        if not path:
+            continue
+        try:
+            p = Path(path)
+            if p.exists():
+                if p.is_dir():
+                    try:
+                        list(p.iterdir())
+                        results["paths"].append({"path": path, "success": True, "message": "Accessible"})
+                    except Exception as re:
+                        results["paths"].append({"path": path, "success": False, "message": f"Permission denied: {str(re)}"})
+                else:
+                    results["paths"].append({"path": path, "success": False, "message": "Exists, but is a file"})
+            else:
+                results["paths"].append({"path": path, "success": False, "message": "Does not exist"})
+        except Exception as e:
+            results["paths"].append({"path": path, "success": False, "message": f"Error: {str(e)}"})
+            
+    return results
+
 @app.post("/api/pipeline/pause")
 def pause_pipeline():
     worker.pause()
