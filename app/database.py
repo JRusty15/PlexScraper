@@ -146,3 +146,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_system_config(key: str, default: str = "") -> str:
+    """Gets a config value from the system_config table, falling back to os.environ or default."""
+    if key in os.environ:
+        return os.environ[key]
+        
+    try:
+        db = SessionLocal()
+        try:
+            record = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+            if record:
+                os.environ[key] = record.value
+                return record.value
+        finally:
+            db.close()
+    except Exception:
+        pass
+        
+    return os.environ.get(key, default)

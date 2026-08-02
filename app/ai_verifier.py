@@ -4,11 +4,9 @@ import base64
 import httpx
 import logging
 from pathlib import Path
+from app.database import get_system_config
 
 logger = logging.getLogger("ai_verifier")
-
-OLLAMA_API_URL = os.environ.get("OLLAMA_API_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-vl")
 
 class AIVerifier:
     def __init__(self, workspace_root: str = "."):
@@ -197,8 +195,11 @@ class AIVerifier:
         if isinstance(images_b64, str):
             images_b64 = [images_b64]
             
+        model = get_system_config("OLLAMA_MODEL", "qwen2.5-vl")
+        api_url = get_system_config("OLLAMA_API_URL", "http://localhost:11434")
+        
         payload = {
-            "model": OLLAMA_MODEL,
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -214,7 +215,7 @@ class AIVerifier:
         }
         
         async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(f"{OLLAMA_API_URL}/api/chat", json=payload)
+            resp = await client.post(f"{api_url}/api/chat", json=payload)
             if resp.status_code != 200:
                 raise RuntimeError(f"Ollama API returned status {resp.status_code}: {resp.text}")
             

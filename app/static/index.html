@@ -165,6 +165,35 @@
                                       <span style="font-size: 0.75rem; color: var(--text-secondary);">Controls how many CPU threads FFmpeg uses for keyframe/audio clip extractions.</span>
                                   </div>
                               </div>
+                              
+                              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+                                  <div style="grid-column: 1 / -1;"><h4 style="margin: 0; color: var(--accent); font-size: 0.95rem;">Integration & Path Settings</h4></div>
+                                  
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Ollama API URL</label>
+                                      <input type="text" id="input-ollama-url" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Ollama Model</label>
+                                      <input type="text" id="input-ollama-model" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Scan Paths (comma-separated)</label>
+                                      <input type="text" id="input-scan-paths" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Workspace Root Path</label>
+                                      <input type="text" id="input-workspace-root" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Plex Server URL</label>
+                                      <input type="text" id="input-plex-url" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                                  <div>
+                                      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.35rem; color: var(--text-secondary);">Plex Auth Token</label>
+                                      <input type="password" id="input-plex-token" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none;">
+                                  </div>
+                              </div>
                           </div>
                           <button class="btn btn-success" onclick="savePipelineConfig()" style="margin-top: 1.5rem; width: fit-content; padding: 0.5rem 1.25rem;">Save Config Preferences</button>
                       </div>
@@ -722,6 +751,13 @@
                 
                 document.getElementById('input-ffmpeg-threads').value = data.ffmpeg_threads;
                 document.getElementById('label-ffmpeg-threads').innerText = data.ffmpeg_threads;
+
+                document.getElementById('input-ollama-url').value = data.ollama_api_url || '';
+                document.getElementById('input-ollama-model').value = data.ollama_model || '';
+                document.getElementById('input-scan-paths').value = data.scan_paths || '';
+                document.getElementById('input-workspace-root').value = data.workspace_root || '';
+                document.getElementById('input-plex-url').value = data.plex_url || '';
+                document.getElementById('input-plex-token').value = data.plex_token || '';
             } catch (err) {
                 console.error("Failed to load pipeline settings:", err);
             }
@@ -730,6 +766,12 @@
         async function savePipelineConfig() {
             const maxJobs = parseInt(document.getElementById('input-max-jobs').value);
             const threads = parseInt(document.getElementById('input-ffmpeg-threads').value);
+            const ollamaUrl = document.getElementById('input-ollama-url').value;
+            const ollamaModel = document.getElementById('input-ollama-model').value;
+            const scanPaths = document.getElementById('input-scan-paths').value;
+            const workspaceRoot = document.getElementById('input-workspace-root').value;
+            const plexUrl = document.getElementById('input-plex-url').value;
+            const plexToken = document.getElementById('input-plex-token').value;
             
             try {
                 const response = await fetch('/api/pipeline/config', {
@@ -737,7 +779,13 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         max_concurrent_jobs: maxJobs,
-                        ffmpeg_threads: threads
+                        ffmpeg_threads: threads,
+                        ollama_api_url: ollamaUrl,
+                        ollama_model: ollamaModel,
+                        scan_paths: scanPaths,
+                        workspace_root: workspaceRoot,
+                        plex_url: plexUrl,
+                        plex_token: plexToken
                     })
                 });
                 const data = await response.json();

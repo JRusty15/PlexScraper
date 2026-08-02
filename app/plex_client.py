@@ -1,18 +1,18 @@
 import os
 import logging
 from plexapi.server import PlexServer
+from app.database import get_system_config
 
 logger = logging.getLogger("plex_client")
-
-PLEX_URL = os.environ.get("PLEX_URL", "")
-PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 
 class PlexClient:
     def __init__(self):
         self.server = None
-        if PLEX_URL and PLEX_TOKEN:
+        plex_url = get_system_config("PLEX_URL", "")
+        plex_token = get_system_config("PLEX_TOKEN", "")
+        if plex_url and plex_token:
             try:
-                self.server = PlexServer(PLEX_URL, PLEX_TOKEN)
+                self.server = PlexServer(plex_url, plex_token)
                 logger.info("Connected to Plex Media Server.")
             except Exception as e:
                 logger.error(f"Failed to connect to Plex Media Server: {e}")

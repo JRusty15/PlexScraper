@@ -93,8 +93,8 @@ def test_get_failures_log(tmp_path, monkeypatch):
     # Setup mock failures.log content
     log_content = "=== FAILURE LOG ===\nFile: test.mkv\nStatus: FLAGGED_TITLE\n"
     
-    # Override main.WORKSPACE_ROOT temporarily for this test
-    monkeypatch.setattr(main, "WORKSPACE_ROOT", str(tmp_path))
+    # Override main.get_workspace_root temporarily for this test
+    monkeypatch.setattr(main, "get_workspace_root", lambda: tmp_path)
     
     # Create the mock file
     data_dir = tmp_path / "data"
@@ -178,12 +178,59 @@ def test_index_html_dom_elements():
         "label-max-jobs",
         "label-ffmpeg-threads",
         "input-max-jobs",
-        "input-ffmpeg-threads"
+        "input-ffmpeg-threads",
+        "input-ollama-url",
+        "input-ollama-model",
+        "input-scan-paths",
+        "input-workspace-root",
+        "input-plex-url",
+        "input-plex-token"
     ]
     
     for element_id in required_ids:
         # Simple string assertion checking for id attribute existence
         assert f'id="{element_id}"' in content or f"id='{element_id}'" in content, f"Missing expected ID: {element_id}"
+
+def test_pipeline_config_endpoints():
+    # 1. Test GET config
+    response = client.get("/api/pipeline/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert "max_concurrent_jobs" in data
+    assert "ffmpeg_threads" in data
+    assert "ollama_api_url" in data
+    assert "ollama_model" in data
+    assert "scan_paths" in data
+    assert "workspace_root" in data
+    assert "plex_url" in data
+    assert "plex_token" in data
+    
+    # 2. Test POST config updates
+    payload = {
+        "max_concurrent_jobs": 5,
+        "ffmpeg_threads": 3,
+        "ollama_api_url": "http://ollama-test:11434",
+        "ollama_model": "test-vlm-model",
+        "scan_paths": "/media/test1,/media/test2",
+        "workspace_root": "./test_workspace",
+        "plex_url": "http://plex-test:32400",
+        "plex_token": "test-plex-token-xyz"
+    }
+    post_resp = client.post("/api/pipeline/config", json=payload)
+    assert post_resp.status_code == 200
+    
+    # 3. Verify GET config returns updated values
+    get_resp = client.get("/api/pipeline/config")
+    assert get_resp.status_code == 200
+    updated_data = get_resp.json()
+    assert updated_data["max_concurrent_jobs"] == 5
+    assert updated_data["ffmpeg_threads"] == 3
+    assert updated_data["ollama_api_url"] == "http://ollama-test:11434"
+    assert updated_data["ollama_model"] == "test-vlm-model"
+    assert updated_data["scan_paths"] == "/media/test1,/media/test2"
+    assert updated_data["workspace_root"] == "./test_workspace"
+    assert updated_data["plex_url"] == "http://plex-test:32400"
+    assert updated_data["plex_token"] == "test-plex-token-xyz"
 
 def test_worker_start_resets_stale_jobs():
     from app.database import AuditJob, JobStatus, FileStatus
