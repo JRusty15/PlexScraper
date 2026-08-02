@@ -184,3 +184,64 @@ def test_index_html_dom_elements():
     for element_id in required_ids:
         # Simple string assertion checking for id attribute existence
         assert f'id="{element_id}"' in content or f"id='{element_id}'" in content, f"Missing expected ID: {element_id}"
+
+def test_worker_start_resets_stale_jobs():
+    from app.database import AuditJob, JobStatus, FileStatus
+    from app.queue_manager import QueueWorker
+    
+    db = TestingSessionLocal()
+    
+    # Clean previous records
+    db.query(AuditJob).delete()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create a verifying file and its corresponding processing job
+    media_file = MediaFile(
+        filepath="/media/Movies/Stale.mkv",
+        filename="Stale.mkv",
+        status=FileStatus.VERIFYING
+    )
+    db.add(media_file)
+    db.commit()
+    
+    job = AuditJob(
+        media_file_id=media_file.id,
+        status=JobStatus.PROCESSING
+    )
+    db.add(job)
+    db.commit()
+    
+    db.close()
+    
+    # Initialize a temporary worker pointing to the test DB configuration
+    test_worker = QueueWorker(workspace_root=".")
+    
+    # Mock loop method to prevent launching real background runner
+    async def mock_loop():
+        pass
+    test_worker._process_queue_loop = mock_loop
+    
+    test_worker.start()
+    test_worker.stop()
+    
+    # Verify DB states
+    db_verify = TestingSessionLocal()
+    job_record = db_verify.query(AuditJob).first()
+    file_record = db_verify.query(MediaFile).first()
+    
+    assert job_record.status == JobStatus.PENDING
+    assert file_record.status == FileStatus.PENDING
+    
+    db_verify.close()
+
+def test_run_throttled_process_timeout():
+    import pytest
+    from app.media_processor import run_throttled_process
+    
+    cmd = ["powershell", "-c", "Start-Sleep 10"]
+    
+    with pytest.raises(TimeoutError) as exc_info:
+        run_throttled_process(cmd, timeout=1)
+        
+    assert "Process timed out after 1 seconds" in str(exc_info.value)

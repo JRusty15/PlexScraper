@@ -6,8 +6,8 @@ import psutil
 from pathlib import Path
 
 # Throttled subprocess runner
-def run_throttled_process(cmd):
-    """Runs a process with below-normal priority to prevent CPU/IO spikes."""
+def run_throttled_process(cmd, timeout=180):
+    """Runs a process with below-normal priority to prevent CPU/IO spikes with a safety timeout."""
     creationflags = 0
     if sys.platform == "win32":
         # BELOW_NORMAL_PRIORITY_CLASS
@@ -20,8 +20,13 @@ def run_throttled_process(cmd):
         creationflags=creationflags
     )
     
-    stdout, stderr = process.communicate()
-    return process.returncode, stdout, stderr
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return process.returncode, stdout, stderr
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate()
+        raise TimeoutError(f"Process timed out after {timeout} seconds: {' '.join(cmd)}")
 
 class MediaProcessor:
     def __init__(self, output_dir: str = "./processed_media"):
@@ -43,7 +48,7 @@ class MediaProcessor:
             filepath
         ]
         
-        returncode, stdout, stderr = run_throttled_process(cmd)
+        returncode, stdout, stderr = run_throttled_process(cmd, timeout=30)
         if returncode != 0:
             raise RuntimeError(f"ffprobe failed with exit code {returncode}: {stderr.decode('utf-8', errors='ignore')}")
             
@@ -123,7 +128,7 @@ class MediaProcessor:
                 str(out_path)
             ]
             
-            returncode, stdout, stderr = run_throttled_process(cmd)
+            returncode, stdout, stderr = run_throttled_process(cmd, timeout=180)
             if returncode == 0 and out_path.exists():
                 extracted_paths.append(f"/static/media/keyframes/{out_filename}")
                 
@@ -153,7 +158,7 @@ class MediaProcessor:
                 str(out_path)
             ]
             
-            returncode, stdout, stderr = run_throttled_process(cmd)
+            returncode, stdout, stderr = run_throttled_process(cmd, timeout=180)
             if returncode == 0 and out_path.exists():
                 extracted_paths.append(f"/static/media/audio/{out_filename}")
                 

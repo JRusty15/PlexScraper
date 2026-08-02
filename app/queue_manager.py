@@ -25,6 +25,24 @@ class QueueWorker:
         if self.is_running:
             return
         self.is_running = True
+        
+        # Reset any stale processing jobs to PENDING on startup
+        db = SessionLocal()
+        try:
+            stale_jobs = db.query(AuditJob).filter(AuditJob.status == JobStatus.PROCESSING).all()
+            if stale_jobs:
+                logger.info(f"Found {len(stale_jobs)} stale processing jobs. Resetting to PENDING...")
+                for job in stale_jobs:
+                    job.status = JobStatus.PENDING
+                    if job.media_file:
+                        job.media_file.status = FileStatus.PENDING
+                db.commit()
+        except Exception as e:
+            logger.error(f"Failed to reset stale jobs on worker start: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
         try:
             loop = asyncio.get_running_loop()
             self._worker_task = loop.create_task(self._process_queue_loop())
