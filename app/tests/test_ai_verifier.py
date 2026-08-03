@@ -14,7 +14,11 @@ def test_sanitize_title():
         "Melissa & Joey - S01E09 - Seoul Man WEBDL-1080p": "Melissa & Joey",
         "The.Simpsons.S30E05.720p.HDTV.x264": "The Simpsons",
         "the.big.bang.theory.1011.hdtv-lol": "the big bang theory",
-        "The.Big.Bang.Theory.S10E23.HDTV.x264-SVA": "The Big Bang Theory"
+        "The.Big.Bang.Theory.S10E23.HDTV.x264-SVA": "The Big Bang Theory",
+        "Need.for.Speed.2014.3D.PROPER.1080p.BluRay.x264-GLASSES": "Need for Speed 2014",
+        "Bad.Neighbors.2014.WEBRip.HC.XviD.MP3-RARBG": "Bad Neighbors 2014",
+        "Night.at.the.Museum.Battle.of.the.Smithsonian.2009.Proper.1080p.BRRip.DDP.5.1.H.265.-iVy": "Night at the Museum Battle of the Smithsonian 2009",
+        "Next.Day.Air.2009.1080p.FDNG.WEB-DL.DDP.5.1.H.264-PiRaTeS": "Next Day Air 2009"
     }
     
     for raw, expected in test_cases.items():

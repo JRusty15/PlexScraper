@@ -305,8 +305,12 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
         if plex_map:
             for item in new_media_records:
                 norm_path = os.path.normpath(item.filepath)
-                if norm_path in plex_map:
-                    duration, rating_key = plex_map[norm_path]
+                suffix = plex._get_path_suffix(item.filepath)
+                
+                # Match by absolute path first, then by last-two-parts suffix
+                match_val = plex_map.get(norm_path) or plex_map.get(suffix)
+                if match_val:
+                    duration, rating_key = match_val
                     item.expected_duration = duration
                     item.plex_rating_key = rating_key
             db.commit()

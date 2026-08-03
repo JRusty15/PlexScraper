@@ -17,6 +17,16 @@ class PlexClient:
             except Exception as e:
                 logger.error(f"Failed to connect to Plex Media Server: {e}")
 
+    def _get_path_suffix(self, filepath: str) -> str:
+        """Extracts the last two components of the file path (e.g. Folder/file.mkv) for robust container matching."""
+        if not filepath:
+            return ""
+        norm = os.path.normpath(filepath).replace("\\", "/")
+        parts = norm.split("/")
+        if len(parts) >= 2:
+            return "/".join(parts[-2:]).lower()
+        return norm.lower()
+
     def get_all_paths_mapping(self) -> dict:
         """Queries all library items from Plex in a single pass to build a file path mapping."""
         mapping = {}
@@ -34,7 +44,12 @@ class PlexClient:
                                     norm_path = os.path.normpath(part.file)
                                     duration_sec = media.duration / 1000.0 if media.duration else None
                                     mapping[norm_path] = (duration_sec, item.ratingKey)
-            logger.info(f"Plex mapping complete. Mapped {len(mapping)} files.")
+                                    
+                                    # Fallback mapping using last 2 components
+                                    suffix = self._get_path_suffix(part.file)
+                                    if suffix:
+                                        mapping[suffix] = (duration_sec, item.ratingKey)
+            logger.info(f"Plex mapping complete. Mapped {len(mapping)} keys/suffixes.")
         except Exception as e:
             logger.error(f"Error mapping Plex files: {e}")
             
@@ -46,20 +61,16 @@ class PlexClient:
             return None, None
             
         try:
-            # Enumerate library sections (Movies and TV Shows)
+            target_suffix = self._get_path_suffix(filepath)
             for section in self.server.library.sections():
-                # Search items in section
-                # Since section.search searches by title, it might be easier to query section.all()
-                # or match using file path.
                 for item in section.all():
-                    # For movies, there is usually one media item, for shows there are episodes
                     if item.type in ["movie", "episode"]:
                         for media in item.media:
                             for part in media.parts:
-                                if os.path.normpath(part.file) == os.path.normpath(filepath):
-                                    # Duration is in milliseconds in PlexAPI, convert to seconds
-                                    duration_sec = media.duration / 1000.0 if media.duration else None
-                                    return duration_sec, item.ratingKey
+                                if part.file:
+                                    if os.path.normpath(part.file) == os.path.normpath(filepath) or self._get_path_suffix(part.file) == target_suffix:
+                                        duration_sec = media.duration / 1000.0 if media.duration else None
+                                        return duration_sec, item.ratingKey
         except Exception as e:
             logger.error(f"Plex search error for {filepath}: {e}")
             

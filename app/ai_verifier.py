@@ -33,23 +33,29 @@ class AIVerifier:
         # Remove anything in brackets or parentheses
         clean = re.sub(r'\[[^\]]*\]|\([^\)]*\)', '', clean)
         
-        # Remove technical keywords, scene tags, and release descriptors (case-insensitive)
-        tech_patterns = [
-            r'\b\d{3,4}p\b', r'\bhevc\b', r'\bx26[45]\b', r'\bbluray\b', r'\bdvdrip\b',
-            r'\bremux\b', r'\bdts\b', r'\bma\b', r'\bavc\b', r'\bopus\b', r'\bhdr\b',
-            r'\bweb-dl\b', r'\bwebdl\b', r'\bhdtv\b', r'\brip\b', r'\baxxo\b', r'\bcodec\b',
-            r'\b3d\b', r'\bproper\b', r'\brepack\b', r'\bunrated\b', r'\bdirector(s)?\s+cut\b',
-            r'\bextended\b', r'\blimited\b', r'\bmulti\b', r'\bsub(s)?\b', r'\bdual\b'
+        # Case insensitive strip of standard release groups, tags, and qualities
+        tags = [
+            # Resolutions
+            r'\b\d{3,4}p\b',
+            # Sources / Quality
+            r'\b(?:bluray|web[\.\-\_]?dl|webrip|brrip|hdrip|dvdrip|hdtv|bdrip|remux|axxo|rip|codec)\b',
+            r'\b(?:proper|repack|hc|hdr|dv|3d|10bit|unrated|extended|limited|multi|sub(s)?|dual)\b',
+            r'\bdirector(s)?\s+cut\b',
+            # Codecs
+            r'\b(?:x264|x265|h[\.\-\_]?26[45]|hevc|avc|xvid|divx|opus)\b',
+            # Audio (including DTS-HD, DTS-MA, Dolby Digital, etc.)
+            r'\b(?:dts[\.\-\_]?(?:hd|ma)?|truehd|ddp|dd\d\.\d|ddp\d\.\d|dd|aac|mp3|eac3|flac|5\s*\.\s*1|2\s*\.\s*0)\b',
+            # Release groups / Scene keywords (common list)
+            r'\b(?:fgt|rarbg|yts|esub|psa|glasses|evo|amiable|ivy|oft|framestor|pirates|fdng|kralimarko|ptp|alfahd|postbot)\b'
         ]
-        for pattern in tech_patterns:
-            clean = re.sub(pattern, '', clean, flags=re.IGNORECASE)
+        
+        for tag_regex in tags:
+            clean = re.sub(tag_regex, ' ', clean, flags=re.IGNORECASE)
             
-        # Clean up double spaces/dots/dashes
-        clean = re.sub(r'[\.\-_]', ' ', clean)
+        # Replace common delimiter patterns with spaces
+        clean = re.sub(r'[\.\-\_\+]', ' ', clean)
         
-        # Strip trailing release groups (e.g., "-GLASSES", "-RARBG", "-YTS", "-FGT", etc.)
-        clean = re.sub(r'\b(fgt|rarbg|yts|esub|psa|hevc|x264|x265|glasses|evo|amiable)\b\s*$', '', clean, flags=re.IGNORECASE)
-        
+        # Clean extra whitespace
         clean = re.sub(r'\s+', ' ', clean).strip()
         
         # If it's a TV show with episode markers or 3-4 digit season/episode numbers (e.g., 1011, 1007, S12E10, S10E23, 12x04)
