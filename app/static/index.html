@@ -261,6 +261,14 @@
                     <p id="modal-notes" class="modal-desc"></p>
                 </div>
 
+                <div class="modal-section" id="modal-section-extended" style="display: none; background: rgba(138, 43, 226, 0.05); border: 1px solid rgba(138, 43, 226, 0.2); border-radius: 8px; padding: 0.75rem;">
+                    <h4 style="color: #9d4edd; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                        ✨ Extended Dialogue/Storyboard Verification
+                    </h4>
+                    <p><strong>Result:</strong> <span id="extended-result-badge" class="badge">-</span></p>
+                    <p id="extended-notes" style="font-size: 0.85rem; margin-top: 0.5rem; line-height: 1.4; white-space: pre-wrap; font-style: italic;"></p>
+                </div>
+
                 <div class="modal-section">
                     <h4>Structural Probe (FFprobe)</h4>
                     <div class="metadata-grid">
@@ -288,6 +296,7 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button class="btn btn-primary" id="modal-btn-extended" style="font-size: 0.85rem; padding: 0.5rem 1rem; background: linear-gradient(135deg, var(--accent-color), #8a2be2); border: none; color: white; display: none;">Extended Audit</button>
                 <button class="btn btn-secondary" id="modal-btn-rescan" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Rescan File</button>
                 <button class="btn btn-success" id="modal-btn-verify" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Mark Correct</button>
                 <button class="btn btn-danger" id="modal-btn-flag" style="font-size: 0.85rem; padding: 0.5rem 1rem; color: white;">Mark Incorrect</button>
@@ -723,6 +732,24 @@
             }
         }
 
+        async function runExtendedAudit(id) {
+            try {
+                const response = await fetch(`/api/files/${id}/extended-audit`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(data.message || "Extended audit queued successfully.", 'success');
+                    closeModal();
+                    await fetchFiles(true);
+                    await fetchStatus();
+                } else {
+                    showToast(data.detail || "Failed to queue extended audit.", 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to request extended audit.", 'error');
+            }
+        }
+
         async function manualVerify(id) {
             try {
                 const response = await fetch(`/api/files/${id}/manual-verify`, { method: 'POST' });
@@ -1025,6 +1052,16 @@
             document.getElementById('modal-btn-verify').onclick = () => manualVerify(id);
             document.getElementById('modal-btn-flag').onclick = () => manualFlag(id);
 
+            const extendedBtn = document.getElementById('modal-btn-extended');
+            extendedBtn.onclick = () => runExtendedAudit(id);
+            
+            // Show extended audit button if file is not currently auditing
+            if (file.status === 'PENDING' || file.status === 'VERIFYING') {
+                extendedBtn.style.display = 'none';
+            } else {
+                extendedBtn.style.display = 'inline-block';
+            }
+
             document.getElementById('modal-title').innerText = file.filename;
             
             const badge = document.getElementById('modal-status-badge');
@@ -1045,6 +1082,19 @@
                 confBadge.style.display = 'none';
             }
             
+            // Render extended audit section if it ran
+            const extendedSection = document.getElementById('modal-section-extended');
+            if (file.audit_result && file.audit_result.is_extended_audit) {
+                extendedSection.style.display = 'block';
+                const passed = file.audit_result.extended_audit_passed;
+                const extBadge = document.getElementById('extended-result-badge');
+                extBadge.innerText = passed ? "PASSED" : "FAILED";
+                extBadge.className = passed ? "badge status-verified" : "badge status-failed";
+                document.getElementById('extended-notes').innerText = file.audit_result.extended_audit_notes || "No details.";
+            } else {
+                extendedSection.style.display = 'none';
+            }
+
             document.getElementById('modal-notes').innerText = file.audit_result?.notes || "No audit details available.";
             
             if (file.audit_result) {

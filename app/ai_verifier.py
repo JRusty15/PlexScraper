@@ -294,3 +294,62 @@ class AIVerifier:
             logger.info(f"Local faster-whisper not available or failed: {e}. Using fallback verification.")
             
         return results
+
+    async def verify_extended_dialogue(self, subtitle_text: str, title: str, summary: str) -> dict:
+        """Compares subtitle dialogue transcript against expected movie/episode overview using Ollama text completion."""
+        # Limit transcript size to avoid context limit (approx 400 lines)
+        lines = subtitle_text.split("\n")
+        truncated_transcript = "\n".join(lines[:400])
+        
+        prompt = (
+            f"You are a media verification assistant. Verify if the following dialogue transcript matches the expected TV show episode plot summary.\n\n"
+            f"Expected Episode Title: {title}\n"
+            f"Expected Episode Plot Overview: {summary}\n\n"
+            f"Dialogue Transcript:\n{truncated_transcript}\n\n"
+            f"Analyze if the characters, key events, discussions, or topics in the dialogue transcript match the expected episode overview. "
+            f"Respond with a JSON object: {{\"matched\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
+        )
+        
+        try:
+            resp = await self._query_ollama(prompt, [])
+            return {
+                "matched": resp.get("matched", False) or resp.get("title_found", False),
+                "reason": resp.get("reason", "Dialogue evaluation completed.")
+            }
+        except Exception as e:
+            logger.error(f"Ollama extended dialogue audit failed: {e}")
+            return {
+                "matched": False,
+                "reason": f"Extended dialogue check failed: {str(e)}"
+            }
+
+    async def verify_visuals_dense(self, keyframe_paths: list, title: str, summary: str) -> dict:
+        """Processes a dense sequence of keyframes to verify if the visuals match the expected movie/episode plot."""
+        results = {"matched": False, "reason": "No keyframes provided."}
+        if not keyframe_paths:
+            return results
+            
+        # We can send up to 12 keyframes in a single request (evenly spaced from the dense list) to avoid overloading visual context
+        sampled_paths = keyframe_paths
+        if len(keyframe_paths) > 12:
+            step = len(keyframe_paths) / 12.0
+            sampled_paths = [keyframe_paths[int(i * step)] for i in range(12)]
+            
+        try:
+            images_b64 = [self._encode_image(p) for p in sampled_paths]
+            prompt = (
+                f"You are a media verification assistant. Analyze this sequence of {len(sampled_paths)} frames taken throughout a video.\n\n"
+                f"Expected Show/Movie Title: {title}\n"
+                f"Expected Plot Summary: {summary}\n\n"
+                f"Does the visual content of these frames (settings, characters, scenes, storylines) depict events that match the expected plot summary? "
+                f"Respond with a JSON object: {{\"matched\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
+            )
+            
+            resp = await self._query_ollama(prompt, images_b64)
+            return {
+                "matched": resp.get("matched", False) or resp.get("content_matches", False),
+                "reason": resp.get("reason", "VLM dense check did not return a reason.")
+            }
+        except Exception as e:
+            logger.error(f"Ollama dense visuals audit failed: {e}")
+            return {"matched": False, "reason": f"VLM dense verification failed: {str(e)}"}

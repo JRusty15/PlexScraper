@@ -360,3 +360,67 @@ def test_run_throttled_process_timeout():
         run_throttled_process(cmd, timeout=1)
         
     assert "Process timed out after 1 seconds" in str(exc_info.value)
+
+def test_extended_audit_endpoints_and_worker():
+    from app.database import AuditJob, JobStatus, FileStatus, AuditResult
+    
+    db = TestingSessionLocal()
+    # Clean previous records
+    db.query(AuditJob).delete()
+    db.query(MediaFile).delete()
+    db.query(AuditResult).delete()
+    db.commit()
+    
+    # Create file
+    media_file = MediaFile(
+        filepath="/media/TV/Show/S01E01.mkv",
+        filename="S01E01.mkv",
+        status=FileStatus.VERIFIED
+    )
+    db.add(media_file)
+    db.commit()
+    file_id = media_file.id
+    db.close()
+    
+    # 1. POST to trigger extended audit
+    response = client.post(f"/api/files/{file_id}/extended-audit")
+    assert response.status_code == 200
+    assert "successfully queued" in response.json()["message"]
+    
+    # Verify file and job states in DB
+    db_verify = TestingSessionLocal()
+    f_rec = db_verify.query(MediaFile).filter(MediaFile.id == file_id).first()
+    j_rec = db_verify.query(AuditJob).filter(AuditJob.media_file_id == file_id).first()
+    assert f_rec.status == FileStatus.PENDING
+    assert j_rec.is_extended is True
+    assert j_rec.status == JobStatus.PENDING
+    db_verify.close()
+    
+    # 2. POST again (should fail with 400 because a job is already active)
+    response_dup = client.post(f"/api/files/{file_id}/extended-audit")
+    assert response_dup.status_code == 400
+    assert "already pending or processing" in response_dup.json()["detail"]
+    
+    # 3. Insert a mock AuditResult with extended audit details
+    db_result = TestingSessionLocal()
+    res = AuditResult(
+        media_file_id=file_id,
+        status=FileStatus.VERIFIED,
+        is_extended_audit=True,
+        extended_audit_passed=True,
+        extended_audit_notes="Mock dialogue matched perfectly with overview.",
+        confidence_score=95
+    )
+    db_result.add(res)
+    db_result.commit()
+    db_result.close()
+    
+    # 4. Query GET /api/files and verify details are returned
+    response_get = client.get("/api/files")
+    assert response_get.status_code == 200
+    data = response_get.json()
+    assert data["total_items"] == 1
+    item = data["items"][0]
+    assert item["audit_result"]["is_extended_audit"] is True
+    assert item["audit_result"]["extended_audit_passed"] is True
+    assert item["audit_result"]["extended_audit_notes"] == "Mock dialogue matched perfectly with overview."

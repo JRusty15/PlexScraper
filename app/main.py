@@ -411,7 +411,10 @@ def get_files(
                     "audio_transcript_snippet": latest_res.audio_transcript_snippet,
                     "audio_clips_paths": latest_res.audio_clips_paths,
                     "confidence_score": latest_res.confidence_score,
-                    "notes": latest_res.notes
+                    "notes": latest_res.notes,
+                    "is_extended_audit": latest_res.is_extended_audit,
+                    "extended_audit_passed": latest_res.extended_audit_passed,
+                    "extended_audit_notes": latest_res.extended_audit_notes
                 }
                 
             result_list.append({
@@ -453,6 +456,36 @@ def requeue_file(file_id: int, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     return {"message": f"File {media_file.filename} requeued."}
+
+@app.post("/api/files/{file_id}/extended-audit")
+def trigger_extended_audit(file_id: int, db: Session = Depends(get_db)):
+    """Creates a new extended verification job for the selected file."""
+    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    if not media_file:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    # Check if there is an active job already
+    active_job = db.query(AuditJob).filter(
+        AuditJob.media_file_id == file_id,
+        AuditJob.status.in_([JobStatus.PENDING, JobStatus.PROCESSING])
+    ).first()
+    
+    if active_job:
+        raise HTTPException(status_code=400, detail="An audit job is already pending or processing for this file.")
+        
+    # Queue new extended audit job
+    job = AuditJob(media_file_id=file_id, is_extended=True, status=JobStatus.PENDING)
+    db.add(job)
+    
+    # Mark media file as PENDING so UI shows it's queued
+    media_file.status = FileStatus.PENDING
+    db.commit()
+    
+    # Trigger queue worker to ensure it starts processing
+    worker.start()
+    
+    logger.info(f"Queued extended audit job for file: {media_file.filename}")
+    return {"message": "Extended audit job successfully queued."}
 
 @app.post("/api/pipeline/requeue-by-status")
 def requeue_by_status(status: str, db: Session = Depends(get_db)):

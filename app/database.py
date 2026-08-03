@@ -73,6 +73,7 @@ class AuditJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     error_message = Column(Text, nullable=True)
+    is_extended = Column(Boolean, default=False, nullable=False)
 
     media_file = relationship("MediaFile", back_populates="jobs")
 
@@ -111,6 +112,11 @@ class AuditResult(Base):
     confidence_score = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
 
+    # Extended audit details
+    is_extended_audit = Column(Boolean, default=False)
+    extended_audit_passed = Column(Boolean, nullable=True)
+    extended_audit_notes = Column(Text, nullable=True)
+
     media_file = relationship("MediaFile", back_populates="results")
 
 class SystemConfig(Base):
@@ -135,6 +141,24 @@ def init_db():
             # Migration: Add confidence_score column if it does not exist
             try:
                 conn.exec_driver_sql("ALTER TABLE audit_results ADD COLUMN confidence_score INTEGER DEFAULT NULL")
+            except Exception:
+                pass
+                
+            # Migration: Add extended audit columns if they do not exist
+            try:
+                conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN is_extended BOOLEAN DEFAULT 0")
+            except Exception:
+                pass
+            try:
+                conn.exec_driver_sql("ALTER TABLE audit_results ADD COLUMN is_extended_audit BOOLEAN DEFAULT 0")
+            except Exception:
+                pass
+            try:
+                conn.exec_driver_sql("ALTER TABLE audit_results ADD COLUMN extended_audit_passed BOOLEAN DEFAULT NULL")
+            except Exception:
+                pass
+            try:
+                conn.exec_driver_sql("ALTER TABLE audit_results ADD COLUMN extended_audit_notes TEXT DEFAULT NULL")
             except Exception:
                 pass
         except Exception:

@@ -170,81 +170,148 @@ class QueueWorker:
                     result.status = FileStatus.FLAGGED_DURATION
                     result.notes = f"Duration variance exceeds 5% (Expected: {media_file.expected_duration}s, Actual: {meta['duration']}s)"
             
-            # Stage 2: Sampling and Extraction
-            logger.info("Extracting keyframes...")
-            kf_paths = self.processor.extract_keyframes(media_file.filepath, meta["duration"], media_file.id)
-            result.keyframes_paths = json.dumps(kf_paths)
-            
-            logger.info("Extracting audio clips...")
-            audio_paths = self.processor.extract_audio_clips(media_file.filepath, meta["duration"], media_file.id)
-            result.audio_clips_paths = json.dumps(audio_paths)
-
-            # Check if previous stages already flagged duration. If not, do VLM / Whisper checks.
+            # Check if previous stages already flagged duration. If not, do verification.
             if result.status != FileStatus.FLAGGED_DURATION:
-                logger.info("Running AI visual checks...")
-                
-                # Fetch metadata from Plex if rating key exists
-                plex_meta = None
-                if media_file.plex_rating_key:
-                    try:
-                        plex = PlexClient()
-                        plex_meta = plex.get_metadata(media_file.plex_rating_key)
-                        logger.info(f"Loaded Plex/TMDB metadata: {list(plex_meta.keys())}")
-                    except Exception as e:
-                        logger.error(f"Error fetching Plex metadata for queue verifier: {e}")
+                if getattr(job, "is_extended", False):
+                    # --- EXTENDED AUDIT WORKFLOW ---
+                    logger.info("Executing Extended Verification Workflow...")
+                    result.is_extended_audit = True
+                    
+                    # Fetch metadata from Plex if rating key exists
+                    plex_meta = None
+                    if media_file.plex_rating_key:
+                        try:
+                            plex = PlexClient()
+                            plex_meta = plex.get_metadata(media_file.plex_rating_key)
+                            logger.info(f"Loaded Plex/TMDB metadata: {list(plex_meta.keys())}")
+                        except Exception as e:
+                            logger.error(f"Error fetching Plex metadata for extended audit: {e}")
 
-                resolved_title = None
-                if plex_meta:
-                    resolved_title = plex_meta.get("title")
+                    expected_title = None
+                    expected_summary = None
+                    if plex_meta:
+                        expected_title = plex_meta.get("title")
+                        expected_summary = plex_meta.get("summary")
+                        
+                    resolved_title = expected_title or media_file.title or media_file.filename
                     
-                vlm_res = await self.verifier.verify_visuals(
-                    kf_paths, 
-                    resolved_title or media_file.title or media_file.filename,
-                    metadata=plex_meta
-                )
-                result.vlm_title_verified = vlm_res["title_verified"]
-                result.vlm_credits_verified = vlm_res["credits_verified"]
-                result.vlm_sanity_check_passed = vlm_res["sanity_check_passed"]
-                result.vlm_raw_response = json.dumps(vlm_res["raw_logs"])
-                
-                logger.info("Running Speech LID language checks...")
-                audio_res = await self.verifier.transcribe_audio_and_identify_language(audio_paths)
-                result.detected_languages = ",".join(audio_res["languages"])
-                result.audio_transcript_snippet = audio_res["transcript"]
-                
-                # Flag Logic
-                vlm_summary = ""
-                for log in vlm_res.get("raw_logs", []):
-                    stage_name = log.get("stage", "").upper()
-                    resp = log.get("response", {})
-                    reason_msg = resp.get("reason") or resp.get("raw_text_fallback") or json.dumps(resp)
-                    vlm_summary += f"[{stage_name}]: {reason_msg}. "
-                
-                # Visual verification passes if title is found OR content consistency sanity check passes
-                visual_check_passed = vlm_res["title_verified"] or vlm_res["sanity_check_passed"]
-                
-                # Language override: if ffprobe detected an explicit 'eng' audio track in the headers,
-                # we bypass Whisper verification failures as it acts as high confidence metadata proof.
-                has_eng_track = False
-                if meta.get("audio_tracks"):
-                    for track in meta["audio_tracks"]:
-                        if track.get("language") == "eng":
-                            has_eng_track = True
-                            break
+                    # 1. Try to extract subtitle track
+                    logger.info("Attempting embedded subtitle dialogue extraction...")
+                    sub_text = self.processor.extract_subtitles(media_file.filepath)
+                    
+                    if sub_text:
+                        logger.info("Semantic subtitle dialogue validation starting...")
+                        dialogue_res = await self.verifier.verify_extended_dialogue(
+                            sub_text, resolved_title, expected_summary or "No plot summary available."
+                        )
+                        result.extended_audit_passed = dialogue_res["matched"]
+                        result.extended_audit_notes = dialogue_res["reason"]
+                        
+                        if dialogue_res["matched"]:
+                            result.status = FileStatus.VERIFIED
+                            result.notes = f"Extended audit passed. Subtitle dialogue match verified. LLM details: {dialogue_res['reason']}"
+                        else:
+                            result.status = FileStatus.FLAGGED_TITLE
+                            result.notes = f"Extended audit failed. Subtitle dialogue does not match expected plot overview. LLM details: {dialogue_res['reason']}"
+                    else:
+                        logger.info("No text subtitles found. Falling back to dense visual VLM checks...")
+                        dense_kf_paths = self.processor.extract_keyframes_dense(media_file.filepath, meta["duration"], media_file.id)
+                        result.keyframes_paths = json.dumps(dense_kf_paths)
+                        
+                        vlm_res = await self.verifier.verify_visuals_dense(
+                            dense_kf_paths, resolved_title, expected_summary or "No plot summary available."
+                        )
+                        result.extended_audit_passed = vlm_res["matched"]
+                        result.extended_audit_notes = vlm_res["reason"]
+                        
+                        if vlm_res["matched"]:
+                            result.status = FileStatus.VERIFIED
+                            result.notes = f"Extended audit passed (VLM fallback). VLM details: {vlm_res['reason']}"
+                        else:
+                            result.status = FileStatus.FLAGGED_TITLE
+                            result.notes = f"Extended audit failed (VLM fallback). VLM details: {vlm_res['reason']}"
                             
-                language_check_passed = ("en" in audio_res["languages"]) or has_eng_track
-                
-                if not visual_check_passed:
-                    result.status = FileStatus.FLAGGED_TITLE
-                    result.notes = f"Visual verification failed. Title card not verified and sanity check failed. VLM details: {vlm_summary}"
-                elif not language_check_passed:
-                    result.status = FileStatus.FLAGGED_LANGUAGE
-                    result.notes = f"English audio check failed. Detected: {result.detected_languages}. VLM details: {vlm_summary}"
-                else:
-                    result.status = FileStatus.VERIFIED
-                    notes_prefix = "All verification steps passed. " if vlm_res["title_verified"] else "Title card not verified, but visual sanity check passed. "
-                    result.notes = f"{notes_prefix}VLM details: {vlm_summary}"
+                    # Set high/low confidence score for extended audits
+                    result.confidence_score = 95 if result.extended_audit_passed else 10
                     
+                else:
+                    # --- STANDARD AUDIT WORKFLOW ---
+                    logger.info("Executing Standard Verification Workflow...")
+                    # Stage 2: Sampling and Extraction
+                    logger.info("Extracting keyframes...")
+                    kf_paths = self.processor.extract_keyframes(media_file.filepath, meta["duration"], media_file.id)
+                    result.keyframes_paths = json.dumps(kf_paths)
+                    
+                    logger.info("Extracting audio clips...")
+                    audio_paths = self.processor.extract_audio_clips(media_file.filepath, meta["duration"], media_file.id)
+                    result.audio_clips_paths = json.dumps(audio_paths)
+                    
+                    logger.info("Running AI visual checks...")
+                    # Fetch metadata from Plex if rating key exists
+                    plex_meta = None
+                    if media_file.plex_rating_key:
+                        try:
+                            plex = PlexClient()
+                            plex_meta = plex.get_metadata(media_file.plex_rating_key)
+                            logger.info(f"Loaded Plex/TMDB metadata: {list(plex_meta.keys())}")
+                        except Exception as e:
+                            logger.error(f"Error fetching Plex metadata for queue verifier: {e}")
+
+                    resolved_title = None
+                    if plex_meta:
+                        resolved_title = plex_meta.get("title")
+                        
+                    vlm_res = await self.verifier.verify_visuals(
+                        kf_paths, 
+                        resolved_title or media_file.title or media_file.filename,
+                        metadata=plex_meta
+                    )
+                    result.vlm_title_verified = vlm_res["title_verified"]
+                    result.vlm_credits_verified = vlm_res["credits_verified"]
+                    result.vlm_sanity_check_passed = vlm_res["sanity_check_passed"]
+                    result.vlm_raw_response = json.dumps(vlm_res["raw_logs"])
+                    
+                    logger.info("Running Speech LID language checks...")
+                    audio_res = await self.verifier.transcribe_audio_and_identify_language(audio_paths)
+                    result.detected_languages = ",".join(audio_res["languages"])
+                    result.audio_transcript_snippet = audio_res["transcript"]
+                    
+                    # Flag Logic
+                    vlm_summary = ""
+                    for log in vlm_res.get("raw_logs", []):
+                        stage_name = log.get("stage", "").upper()
+                        resp = log.get("response", {})
+                        reason_msg = resp.get("reason") or resp.get("raw_text_fallback") or json.dumps(resp)
+                        vlm_summary += f"[{stage_name}]: {reason_msg}. "
+                    
+                    # Visual verification passes if title is found OR content consistency sanity check passes
+                    visual_check_passed = vlm_res["title_verified"] or vlm_res["sanity_check_passed"]
+                    
+                    # Language override: if ffprobe detected an explicit 'eng' audio track in the headers,
+                    # we bypass Whisper verification failures as it acts as high confidence metadata proof.
+                    has_eng_track = False
+                    if meta.get("audio_tracks"):
+                        for track in meta["audio_tracks"]:
+                            if track.get("language") == "eng":
+                                has_eng_track = True
+                                break
+                                
+                    language_check_passed = ("en" in audio_res["languages"]) or has_eng_track
+                    
+                    if not visual_check_passed:
+                        result.status = FileStatus.FLAGGED_TITLE
+                        result.notes = f"Visual verification failed. Title card not verified and sanity check failed. VLM details: {vlm_summary}"
+                    elif not language_check_passed:
+                        result.status = FileStatus.FLAGGED_LANGUAGE
+                        result.notes = f"English audio check failed. Detected: {result.detected_languages}. VLM details: {vlm_summary}"
+                    else:
+                        result.status = FileStatus.VERIFIED
+                        notes_prefix = "All verification steps passed. " if vlm_res["title_verified"] else "Title card not verified, but visual sanity check passed. "
+                        result.notes = f"{notes_prefix}VLM details: {vlm_summary}"
+                        
+                    # Calculate final confidence score
+                    result.confidence_score = self._calculate_confidence(result, vlm_res, audio_res, media_file)
+
                 # If flagged, append details to a dedicated failures log file
                 if result.status != FileStatus.VERIFIED:
                     try:
@@ -264,9 +331,6 @@ class QueueWorker:
                             f.write(log_entry)
                     except Exception as le:
                         logger.error(f"Failed to write to failures.log: {le}")
-
-                # Calculate final confidence score
-                result.confidence_score = self._calculate_confidence(result, vlm_res, audio_res, media_file)
                     
             # Complete Job
             job.status = JobStatus.COMPLETED

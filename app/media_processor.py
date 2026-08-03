@@ -163,3 +163,111 @@ class MediaProcessor:
                 extracted_paths.append(f"/static/media/audio/{out_filename}")
                 
         return extracted_paths
+
+    def extract_subtitles(self, filepath: str) -> str:
+        """Attempts to extract text subtitles from the first English or default text subtitle track."""
+        import re
+        try:
+            cmd_probe = [
+                "ffprobe",
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_streams",
+                filepath
+            ]
+            returncode, stdout, stderr = run_throttled_process(cmd_probe, timeout=20)
+            if returncode == 0:
+                probe_data = json.loads(stdout.decode("utf-8"))
+                streams = probe_data.get("streams", [])
+                
+                # Filter subtitle streams
+                sub_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
+                
+                # Look for a text-based subtitle track (subrip/srt, ass, ssa, mov_text, webvtt)
+                text_codecs = ["subrip", "srt", "ass", "ssa", "mov_text", "webvtt"]
+                
+                selected_index = None
+                # Priority 1: English text-based subtitle
+                for s in sub_streams:
+                    codec = s.get("codec_name", "").lower()
+                    lang = s.get("tags", {}).get("language", "").lower()
+                    if codec in text_codecs and (lang == "eng" or lang == "en"):
+                        selected_index = s.get("index")
+                        break
+                        
+                # Priority 2: Any text-based subtitle
+                if selected_index is None:
+                    for s in sub_streams:
+                        codec = s.get("codec_name", "").lower()
+                        if codec in text_codecs:
+                            selected_index = s.get("index")
+                            break
+                            
+                # Priority 3: Fallback to first subtitle stream generally
+                if selected_index is None and sub_streams:
+                    selected_index = sub_streams[0].get("index")
+                    
+                if selected_index is not None:
+                    cmd_ffmpeg = [
+                        "ffmpeg",
+                        "-y",
+                        "-i", filepath,
+                        "-map", f"0:{selected_index}",
+                        "-f", "srt",
+                        "-"
+                    ]
+                    rc, stdout_ff, stderr_ff = run_throttled_process(cmd_ffmpeg, timeout=30)
+                    if rc == 0:
+                        raw_text = stdout_ff.decode("utf-8", errors="ignore")
+                        
+                        # Clean SRT format formatting
+                        # Remove subtitle indexes
+                        clean = re.sub(r'^\d+\s*$', '', raw_text, flags=re.MULTILINE)
+                        # Remove timestamps
+                        clean = re.sub(r'^\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*$', '', clean, flags=re.MULTILINE)
+                        # Remove HTML tags
+                        clean = re.sub(r'<[^>]*>', '', clean)
+                        # Remove empty lines
+                        lines = [line.strip() for line in clean.split('\n') if line.strip()]
+                        return "\n".join(lines)
+        except Exception:
+            pass
+            
+        return ""
+
+    def extract_keyframes_dense(self, filepath: str, duration: float, media_id: int) -> list:
+        """Extracts dense keyframes every 90 seconds (up to 25 frames) for extended visual verification."""
+        extracted_paths = []
+        interval = 90
+        # Calculate timestamps
+        timestamps = list(range(30, int(duration), interval))
+        # Cap at 25 frames
+        if len(timestamps) > 25:
+            step = len(timestamps) / 25.0
+            timestamps = [timestamps[int(i * step)] for i in range(25)]
+            
+        for idx, timestamp in enumerate(timestamps):
+            out_filename = f"media_{media_id}_dense_frame_{idx}.jpg"
+            out_path = self.keyframes_dir / out_filename
+            
+            ffmpeg_threads = os.environ.get("FFMPEG_THREADS", "1")
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss", str(timestamp),
+                "-threads", ffmpeg_threads,
+                "-i", filepath,
+                "-vframes", "1",
+                "-vf", "scale=480:-1",
+                "-q:v", "9",
+                str(out_path)
+            ]
+            
+            try:
+                returncode, stdout, stderr = run_throttled_process(cmd, timeout=180)
+                if returncode == 0 and out_path.exists():
+                    extracted_paths.append(f"/static/media/keyframes/{out_filename}")
+            except Exception:
+                pass
+                
+        return extracted_paths
