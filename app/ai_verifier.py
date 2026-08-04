@@ -30,6 +30,9 @@ class AIVerifier:
         # Remove file extension if present (e.g. .mkv, .mp4)
         clean = re.sub(r'\.[a-zA-Z0-9]{3,4}$', '', raw_title)
         
+        # Remove trailing release group suffixes (e.g., -BEN.THE.MEN, -GLASSES, -iVy) at the end of the filename stem
+        clean = re.sub(r'-[a-zA-Z0-9\.\-_]+$', '', clean)
+        
         # Remove anything in brackets or parentheses
         clean = re.sub(r'\[[^\]]*\]|\([^\)]*\)', '', clean)
         
@@ -38,11 +41,11 @@ class AIVerifier:
             # Resolutions
             r'\b\d{3,4}p\b',
             # Sources / Quality
-            r'\b(?:bluray|web[\.\-\_]?dl|webrip|brrip|hdrip|dvdrip|hdtv|bdrip|remux|axxo|rip|codec)\b',
-            r'\b(?:proper|repack|hc|hdr|dv|3d|10bit|unrated|extended|limited|multi|sub(s)?|dual)\b',
+            r'\b(?:bluray|web[\.\-\_]?dl|webrip|brrip|hdrip|dvdrip|hdtv|bdrip|remux|axxo|rip|codec|web)\b',
+            r'\b(?:proper|repack|hc|hdr|dv|3d|10bit|unrated|extended|limited|multi|sub(s)?|dual|atmos|hdr10|hdr10plus|dolby[\.\-\_]?vision)\b',
             r'\bdirector(s)?\s+cut\b',
-            # Codecs
-            r'\b(?:x264|x265|h[\.\-\_]?26[45]|hevc|avc|xvid|divx|opus)\b',
+            # Codecs / Containers
+            r'\b(?:x264|x265|h[\.\-\_]?26[45]|hevc|avc|xvid|divx|opus|mp4|mkv|avi|m4v|mov)\b',
             # Audio (including DTS-HD, DTS-MA, Dolby Digital, etc.)
             r'\b(?:dts[\.\-\_]?(?:hd|ma)?|truehd|ddp|dd\d\.\d|ddp\d\.\d|dd|aac|mp3|eac3|flac|5\s*\.\s*1|2\s*\.\s*0)\b',
             # Release groups / Scene keywords (common list)
@@ -136,16 +139,35 @@ class AIVerifier:
         # 3. Sanity verification (typically mid keyframes: 20%, 30%, 45%, 60%, 70%, 80%)
         try:
             meta_str = ""
+            is_animated = False
             if metadata:
                 meta_str += f"\n\nExpected Media Metadata Guidelines:"
                 if metadata.get("year"):
                     meta_str += f"\n- Release Year: {metadata['year']}"
                 if metadata.get("genres"):
                     meta_str += f"\n- Genres: {', '.join(metadata['genres'])}"
+                    genres_lower = [g.lower() for g in metadata["genres"]]
+                    if "animation" in genres_lower or "animated" in genres_lower:
+                        is_animated = True
                 if metadata.get("roles"):
                     meta_str += f"\n- Key Cast/Actors: {', '.join(metadata['roles'])}"
                 if metadata.get("summary"):
                     meta_str += f"\n- Plot Summary: {metadata['summary']}"
+
+            # Set visual context guidelines dynamically based on genre
+            if is_animated:
+                genre_context = (
+                    f"The expected show/movie '{clean_title}' is an ANIMATED cartoon or CGI movie. "
+                    "Therefore, the frames SHOULD show animated characters, puppets, cartoon settings, or CGI graphics. "
+                    "Do NOT reject it for being animated."
+                )
+                contradiction_examples = "a live-action news broadcast, a real-life sports match, a home video, or a static test pattern"
+            else:
+                genre_context = (
+                    f"The expected show/movie '{clean_title}' is a live-action film or series. "
+                    "Therefore, the frames should show normal live-action environments/actors."
+                )
+                contradiction_examples = "a 2D cartoon/anime (unless it's an animated show), a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
 
             # Since keyframes are sampled at 1m, 2m, 3m, 4m, 5m followed by percentages:
             # First 5 frames are early checks, last frame is credits, middle ones are sanity checks.
@@ -159,9 +181,10 @@ class AIVerifier:
                     f"You are verifying if a video file matches its expected title: '{clean_title}'.{meta_str}\n\n"
                     f"Analyze these {len(mid_keyframes)} images from the middle of the video:\n"
                     f"1. Identify the setting, genre, and style of the video.\n"
-                    f"2. Your task is to verify that these images are consistent with a standard movie or show of this general genre. You must be EXTREMELY LENIENT.\n"
-                    f"3. PASS BY DEFAULT: You should output 'content_matches: true' by default. Normal live-action scenes (e.g., characters talking in an office, kitchen, school classroom, sitting in a living room, walking on a street, or dark outdoor environments) are normal for films and match the expected media. Do NOT reject the file based on everyday settings, dark frames, or the lack of specific action points.\n"
-                    f"4. FLAGRANT CONTRADICTIONS ONLY: Only output 'content_matches: false' if there is an undeniable, obvious contradiction (e.g. the expected title is a live-action film like '{clean_title}', but the images show a 2D cartoon/anime, a sports match, a news broadcast, a cooking show, a video game, or a home renovation channel). If it looks like a normal live-action movie/show, you MUST set 'content_matches: true'.\n"
+                    f"2. {genre_context}\n"
+                    f"3. Your task is to verify that these images are consistent with a standard movie or show of this general genre. You must be EXTREMELY LENIENT.\n"
+                    f"4. PASS BY DEFAULT: You should output 'content_matches: true' by default. Normal scenes (talking, sitting, walking, or dark environments) are normal and match the expected media. Do NOT reject the file based on everyday settings, dark frames, or the lack of specific action points.\n"
+                    f"5. FLAGRANT CONTRADICTIONS ONLY: Only output 'content_matches: false' if there is an undeniable, obvious contradiction (e.g. {contradiction_examples}).\n"
                     f"Respond with a JSON object:\n"
                     f"{{\n"
                     f"  \"content_matches\": true/false,\n"
@@ -180,10 +203,16 @@ class AIVerifier:
                 prompt = (
                     f"Analyze this image from a video. Does the scene/visual content match the expectations of a "
                     f"media file titled '{clean_title}'?\n"
-                    f"You must be EXTREMELY LENIENT. Normal live-action scenes (e.g., characters talking, sitting in a room, walking) are normal for films. "
-                    f"Only set content_matches: false if there is an obvious contradiction (e.g. expected live-action but got a 2D cartoon or news report).\n"
+                    f"{genre_context}\n"
+                    f"You must be EXTREMELY LENIENT. Normal scenes (talking, sitting, walking, or dark environments) are normal. "
+                    f"Only set content_matches: false if there is an obvious contradiction (e.g., {contradiction_examples}).\n"
                     f"Answer with a JSON object: "
-                    f"{{\"content_matches\": true/false, \"confidence\": 0.0-1.0, \"description\": \"brief summary\", \"reason\": \"string\"}}"
+                    f"{{\n"
+                    f"  \"content_matches\": true/false,\n"
+                    f"  \"confidence\": 0.0-1.0,\n"
+                    f"  \"description\": \"brief summary of detected elements\",\n"
+                    f"  \"reason\": \"explanation of why it matches or contradicts the expected title\"\n"
+                    f"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64)

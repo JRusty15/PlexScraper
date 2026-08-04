@@ -41,7 +41,7 @@ class MediaProcessor:
         """Probes structural integrity and metadata using ffprobe."""
         cmd = [
             "ffprobe",
-            "-v", "quiet",
+            "-v", "error",
             "-print_format", "json",
             "-show_format",
             "-show_streams",
@@ -170,7 +170,7 @@ class MediaProcessor:
         try:
             cmd_probe = [
                 "ffprobe",
-                "-v", "quiet",
+                "-v", "error",
                 "-print_format", "json",
                 "-show_streams",
                 filepath

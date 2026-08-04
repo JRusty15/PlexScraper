@@ -90,6 +90,7 @@ class PlexClient:
     def get_metadata(self, rating_key: str) -> dict:
         """Fetches detailed TMDB metadata from local Plex Server for verification guidance."""
         meta = {
+            "title": "",
             "summary": "",
             "genres": [],
             "roles": [],
@@ -100,6 +101,7 @@ class PlexClient:
             
         try:
             item = self.server.fetchItem(int(rating_key))
+            meta["title"] = getattr(item, "title", "")
             meta["summary"] = getattr(item, "summary", "")
             meta["genres"] = [g.tag for g in getattr(item, "genres", [])] if hasattr(item, "genres") else []
             meta["roles"] = [r.tag for r in getattr(item, "roles", [])][:5] if hasattr(item, "roles") else []
