@@ -36,11 +36,17 @@ class PlexClient:
         try:
             logger.info("Building path-to-metadata mapping from Plex library...")
             for section in self.server.library.sections():
-                for item in section.all():
-                    if item.type in ["movie", "episode"]:
-                        for media in item.media:
-                            for part in media.parts:
-                                if part.file:
+                if section.type == "movie":
+                    items = section.all()
+                elif section.type == "show":
+                    items = section.search(libtype="episode")
+                else:
+                    continue
+                    
+                for item in items:
+                    for media in item.media:
+                        for part in media.parts:
+                            if part.file:
                                     norm_path = os.path.normpath(part.file)
                                     duration_sec = media.duration / 1000.0 if media.duration else None
                                     mapping[norm_path] = (duration_sec, item.ratingKey)
