@@ -322,8 +322,10 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
                 norm_path = os.path.normpath(item.filepath)
                 suffix = plex._get_path_suffix(item.filepath)
                 
-                # Match by absolute path first, then by last-two-parts suffix
-                match_val = plex_map.get(norm_path) or plex_map.get(suffix)
+                filename = os.path.basename(item.filepath).lower()
+                
+                # Match by absolute path first, then by last-two-parts suffix, then by filename
+                match_val = plex_map.get(norm_path) or plex_map.get(suffix) or plex_map.get(filename)
                 if match_val:
                     duration, rating_key = match_val
                     item.expected_duration = duration
@@ -347,8 +349,9 @@ def enrich_plex_metadata(db: Session = Depends(get_db)):
         for item in media_records:
             norm_path = os.path.normpath(item.filepath)
             suffix = plex._get_path_suffix(item.filepath)
+            filename = os.path.basename(item.filepath).lower()
             
-            match_val = plex_map.get(norm_path) or plex_map.get(suffix)
+            match_val = plex_map.get(norm_path) or plex_map.get(suffix) or plex_map.get(filename)
             if match_val:
                 duration, rating_key = match_val
                 if item.expected_duration != duration or item.plex_rating_key != rating_key:

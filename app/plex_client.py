@@ -49,6 +49,11 @@ class PlexClient:
                                     suffix = self._get_path_suffix(part.file)
                                     if suffix:
                                         mapping[suffix] = (duration_sec, item.ratingKey)
+                                        
+                                    # Fallback mapping using filename (basename) lowercase
+                                    filename = os.path.basename(part.file).lower()
+                                    if filename:
+                                        mapping[filename] = (duration_sec, item.ratingKey)
             logger.info(f"Plex mapping complete. Mapped {len(mapping)} keys/suffixes.")
         except Exception as e:
             logger.error(f"Error mapping Plex files: {e}")

@@ -548,7 +548,7 @@ def test_enrich_plex_metadata(monkeypatch):
     
     def mock_get_all_paths_mapping(self):
         return {
-            "movies/a.mkv": (7200.0, "rating_111"),
+            "a.mkv": (7200.0, "rating_111"),
             "movies/b.mkv": (5400.0, "rating_222")
         }
         
@@ -559,7 +559,8 @@ def test_enrich_plex_metadata(monkeypatch):
     db.query(MediaFile).delete()
     db.commit()
     
-    f1 = MediaFile(filepath="movies/a.mkv", filename="a.mkv", status=FileStatus.PENDING, expected_duration=None, plex_rating_key=None)
+    # f1 directory path is completely different from the plex key, so only filename match applies
+    f1 = MediaFile(filepath="/different/mount/path/movies/a.mkv", filename="a.mkv", status=FileStatus.PENDING, expected_duration=None, plex_rating_key=None)
     f2 = MediaFile(filepath="movies/b.mkv", filename="b.mkv", status=FileStatus.PENDING, expected_duration=100.0, plex_rating_key="old_key")
     db.add_all([f1, f2])
     db.commit()
