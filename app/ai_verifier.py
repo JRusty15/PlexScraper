@@ -158,10 +158,13 @@ class AIVerifier:
             if is_animated:
                 genre_context = (
                     f"The expected show/movie '{clean_title}' is an ANIMATED cartoon or CGI movie. "
-                    "Therefore, the frames SHOULD show animated characters, puppets, cartoon settings, or CGI graphics. "
-                    "Do NOT reject it for being animated."
+                    "Note that modern 3D CGI animation (like Pixar, Illumination, DreamWorks) often features extremely "
+                    "realistic, near-photorealistic backgrounds, physics, water, and environments (such as supermarkets, "
+                    "beaches, streets, or grocery store shelves). Do NOT reject the file if the backgrounds or environments "
+                    "look highly detailed or photorealistic. Look closely for CGI styling or animated characters. "
+                    "Do NOT reject it for being animated or showing realistic animated environments."
                 )
-                contradiction_examples = "a live-action news broadcast, a real-life sports match, a home video, or a static test pattern"
+                contradiction_examples = "a live-action news broadcast, a real-life sports match, a real-world home video with real people, or a static test pattern"
             else:
                 genre_context = (
                     f"The expected show/movie '{clean_title}' is a live-action film or series. "
