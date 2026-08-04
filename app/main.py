@@ -340,12 +340,18 @@ def enrich_plex_metadata(db: Session = Depends(get_db)):
     try:
         plex = PlexClient()
         plex_map = plex.get_all_paths_mapping()
-        if not plex_map:
-            raise HTTPException(status_code=400, detail="Failed to connect to Plex or retrieve library mapping.")
+        
+        if plex.server:
+            logger.info(f"Plex Server: {plex.server.friendlyName}, machineIdentifier: {plex.server.machineIdentifier}")
             
         import os
         media_records = db.query(MediaFile).all()
         updated_count = 0
+        matched_count = 0
+        unmatched_samples = []
+        
+        map_keys_sample = list(plex_map.keys())[:15]
+        
         for item in media_records:
             norm_path = os.path.normpath(item.filepath)
             suffix = plex._get_path_suffix(item.filepath)
@@ -353,14 +359,46 @@ def enrich_plex_metadata(db: Session = Depends(get_db)):
             
             match_val = plex_map.get(norm_path) or plex_map.get(suffix) or plex_map.get(filename)
             if match_val:
+                matched_count += 1
                 duration, rating_key = match_val
                 if item.expected_duration != duration or item.plex_rating_key != rating_key:
                     item.expected_duration = duration
                     item.plex_rating_key = rating_key
                     updated_count += 1
+            else:
+                if len(unmatched_samples) < 20:
+                    unmatched_samples.append({
+                        "id": item.id,
+                        "filepath": item.filepath,
+                        "norm_path": norm_path,
+                        "suffix": suffix,
+                        "filename": filename
+                    })
                     
         db.commit()
-        return {"message": f"Plex metadata refresh completed. Updated {updated_count} files."}
+        
+        logger.info(
+            f"Plex Sync Diagnostic: Total DB Files={len(media_records)}, "
+            f"Plex Mapped Path Entries={len(plex_map)}, "
+            f"Matched={matched_count}, Unmatched={len(media_records) - matched_count}, "
+            f"Updated={updated_count}"
+        )
+        if unmatched_samples:
+            logger.info(f"Sample Unmatched Files in DB: {unmatched_samples[:5]}")
+            logger.info(f"Sample Mapped Keys from Plex: {map_keys_sample}")
+            
+        return {
+            "message": f"Plex metadata refresh completed. Updated {updated_count} files (Matched: {matched_count}/{len(media_records)}).",
+            "diagnostics": {
+                "total_db_files": len(media_records),
+                "plex_mapped_entries": len(plex_map),
+                "matched_count": matched_count,
+                "unmatched_count": len(media_records) - matched_count,
+                "updated_count": updated_count,
+                "unmatched_samples": unmatched_samples,
+                "plex_mapped_keys_sample": map_keys_sample
+            }
+        }
     except Exception as e:
         db.rollback()
         logger.error(f"Error enriching Plex metadata: {e}")

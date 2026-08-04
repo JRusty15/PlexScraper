@@ -568,7 +568,10 @@ def test_enrich_plex_metadata(monkeypatch):
     
     resp = client.post("/api/pipeline/enrich-plex")
     assert resp.status_code == 200
-    assert "Updated 2 files" in resp.json()["message"]
+    res_json = resp.json()
+    assert "Updated 2 files" in res_json["message"]
+    assert res_json["diagnostics"]["updated_count"] == 2
+    assert res_json["diagnostics"]["matched_count"] == 2
     
     db_verify = TestingSessionLocal()
     f1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "a.mkv").first()
