@@ -510,3 +510,34 @@ def test_export_files():
     assert len(data) == 2
     assert data[0]["filename"] == "A_Movie.mkv"
     assert data[1]["filename"] == "B_Movie.mkv"
+
+def test_requeue_all_flagged():
+    from app.database import MediaFile, AuditResult
+    db = TestingSessionLocal()
+    
+    # Clean previous records
+    db.query(AuditResult).delete()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create multiple flagged files with different statuses
+    f1 = MediaFile(filepath="/media/Movies/A.mkv", filename="A.mkv", status=FileStatus.FLAGGED_TITLE)
+    f2 = MediaFile(filepath="/media/Movies/B.mkv", filename="B.mkv", status=FileStatus.FLAGGED_DURATION)
+    f3 = MediaFile(filepath="/media/Movies/C.mkv", filename="C.mkv", status=FileStatus.VERIFIED)
+    
+    db.add_all([f1, f2, f3])
+    db.commit()
+    db.close()
+    
+    # Bulk requeue FLAGGED
+    resp = client.post("/api/pipeline/requeue-by-status?status=FLAGGED")
+    assert resp.status_code == 200
+    assert "Successfully requeued 2 files" in resp.json()["message"]
+    
+    # Verify the flagged files are now PENDING, and VERIFIED was untouched
+    db_verify = TestingSessionLocal()
+    pending_files = db_verify.query(MediaFile).filter(MediaFile.status == FileStatus.PENDING).all()
+    verified_files = db_verify.query(MediaFile).filter(MediaFile.status == FileStatus.VERIFIED).all()
+    assert len(pending_files) == 2
+    assert len(verified_files) == 1
+    db_verify.close()

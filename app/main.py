@@ -746,7 +746,11 @@ def trigger_extended_audit(file_id: int, db: Session = Depends(get_db)):
 def requeue_by_status(status: str, db: Session = Depends(get_db)):
     """Bulk resets the status of all files matching a specific state and adds them back to the queue."""
     # Find matching files
-    files = db.query(MediaFile).filter(MediaFile.status == status).all()
+    if status == "FLAGGED":
+        files = db.query(MediaFile).filter(MediaFile.status.like("FLAGGED_%")).all()
+    else:
+        files = db.query(MediaFile).filter(MediaFile.status == status).all()
+        
     if not files:
         return {"message": f"No files found with status '{status}'."}
         
