@@ -332,6 +332,37 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
 
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
+@app.post("/api/pipeline/enrich-plex")
+def enrich_plex_metadata(db: Session = Depends(get_db)):
+    """Forces synchronization/refresh of Plex rating keys and expected runtimes for all media files in the database."""
+    try:
+        plex = PlexClient()
+        plex_map = plex.get_all_paths_mapping()
+        if not plex_map:
+            raise HTTPException(status_code=400, detail="Failed to connect to Plex or retrieve library mapping.")
+            
+        import os
+        media_records = db.query(MediaFile).all()
+        updated_count = 0
+        for item in media_records:
+            norm_path = os.path.normpath(item.filepath)
+            suffix = plex._get_path_suffix(item.filepath)
+            
+            match_val = plex_map.get(norm_path) or plex_map.get(suffix)
+            if match_val:
+                duration, rating_key = match_val
+                if item.expected_duration != duration or item.plex_rating_key != rating_key:
+                    item.expected_duration = duration
+                    item.plex_rating_key = rating_key
+                    updated_count += 1
+                    
+        db.commit()
+        return {"message": f"Plex metadata refresh completed. Updated {updated_count} files."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error enriching Plex metadata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 def get_plex_machine_identifier(db: Session) -> str:
     """Helper to resolve and cache Plex machineIdentifier in database."""
     val = get_system_config("PLEX_MACHINE_IDENTIFIER", "")

@@ -541,3 +541,39 @@ def test_requeue_all_flagged():
     assert len(pending_files) == 2
     assert len(verified_files) == 1
     db_verify.close()
+
+def test_enrich_plex_metadata(monkeypatch):
+    from app.database import MediaFile, FileStatus
+    from app.plex_client import PlexClient
+    
+    def mock_get_all_paths_mapping(self):
+        return {
+            "movies/a.mkv": (7200.0, "rating_111"),
+            "movies/b.mkv": (5400.0, "rating_222")
+        }
+        
+    monkeypatch.setattr(PlexClient, "get_all_paths_mapping", mock_get_all_paths_mapping)
+    monkeypatch.setattr(PlexClient, "_get_path_suffix", lambda self, fp: fp.lower().replace("\\", "/"))
+
+    db = TestingSessionLocal()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    f1 = MediaFile(filepath="movies/a.mkv", filename="a.mkv", status=FileStatus.PENDING, expected_duration=None, plex_rating_key=None)
+    f2 = MediaFile(filepath="movies/b.mkv", filename="b.mkv", status=FileStatus.PENDING, expected_duration=100.0, plex_rating_key="old_key")
+    db.add_all([f1, f2])
+    db.commit()
+    db.close()
+    
+    resp = client.post("/api/pipeline/enrich-plex")
+    assert resp.status_code == 200
+    assert "Updated 2 files" in resp.json()["message"]
+    
+    db_verify = TestingSessionLocal()
+    f1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "a.mkv").first()
+    f2_db = db_verify.query(MediaFile).filter(MediaFile.filename == "b.mkv").first()
+    assert f1_db.expected_duration == 7200.0
+    assert f1_db.plex_rating_key == "rating_111"
+    assert f2_db.expected_duration == 5400.0
+    assert f2_db.plex_rating_key == "rating_222"
+    db_verify.close()

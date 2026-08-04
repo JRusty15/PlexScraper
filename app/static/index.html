@@ -39,6 +39,7 @@
                 </div>
 
                 <button class="btn btn-primary" id="btn-scan" onclick="triggerScan()">Scan Directories</button>
+                <button class="btn btn-secondary" id="btn-refresh-plex" onclick="refreshPlexMetadata()" style="background: rgba(229, 160, 13, 0.15); border: 1px solid #e5a00d; color: #e5a00d;" onmouseover="this.style.background='rgba(229, 160, 13, 0.25)'" onmouseout="this.style.background='rgba(229, 160, 13, 0.15)'">Sync Plex Runtimes</button>
                 <button class="btn btn-secondary" id="btn-pause" onclick="togglePause()">Pause Queue</button>
                 <button class="btn btn-danger" onclick="nukePipeline()" style="background-color: var(--danger); color: white;">Nuke Queue</button>
             </div>
@@ -707,6 +708,29 @@
             } catch (err) {
                 console.error(err);
                 showToast("Failed to start filesystem scan.", 'error');
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function refreshPlexMetadata() {
+            const btn = document.getElementById('btn-refresh-plex');
+            const originalText = btn.innerText;
+            btn.innerHTML = `<span class="spinner-btn"></span> Syncing...`;
+            btn.disabled = true;
+            try {
+                const response = await fetch('/api/pipeline/enrich-plex', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(data.message || "Plex sync completed.", 'success');
+                } else {
+                    showToast(data.detail || "Failed to sync Plex metadata.", 'error');
+                }
+                await fetchFiles(true);
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to sync Plex metadata.", 'error');
             } finally {
                 btn.innerText = originalText;
                 btn.disabled = false;
