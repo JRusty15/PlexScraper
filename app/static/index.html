@@ -93,6 +93,10 @@
                         <button id="btn-filter-VERIFIED" class="filter-btn" onclick="filterTable(event, 'VERIFIED')">Verified</button>
                         <button id="btn-filter-FLAGGED" class="filter-btn" onclick="filterTable(event, 'FLAGGED')">Flagged</button>
                         <button id="btn-filter-PENDING" class="filter-btn" onclick="filterTable(event, 'PENDING')">Queue</button>
+
+                        <button id="btn-export" class="btn btn-secondary btn-sm" onclick="exportSnapshot()" style="padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: var(--text-primary); margin-left: 0.5rem;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                            <span>📥</span> Export Snapshot
+                        </button>
                     </div>
                 </div>
 
@@ -446,6 +450,20 @@
             const newSearch = params.toString();
             const newURL = window.location.pathname + (newSearch ? '?' + newSearch : '');
             window.history.replaceState(null, '', newURL);
+        }
+
+        function exportSnapshot() {
+            let url = `/api/files/export?sort_by=${currentSortBy}&sort_order=${currentSortOrder}`;
+            if (currentStatusFilter !== 'all') {
+                url += `&status=${currentStatusFilter}`;
+            }
+            if (currentSourceFilter !== 'all') {
+                url += `&source_path=${currentSourceFilter}`;
+            }
+            if (currentSearchQuery) {
+                url += `&search=${encodeURIComponent(currentSearchQuery)}`;
+            }
+            window.location.href = url;
         }
 
         async function fetchStatus() {

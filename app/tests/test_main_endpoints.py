@@ -473,3 +473,31 @@ def test_get_files_sorting_and_source_path_filtering():
     # m2 has 95, m1 has 80, t1 has none
     assert resp.json()["items"][0]["filename"] == "B_Movie.mkv"
     assert resp.json()["items"][1]["filename"] == "A_Movie.mkv"
+
+def test_export_files():
+    from app.database import MediaFile, AuditResult
+    db = TestingSessionLocal()
+    
+    # Clean previous records
+    db.query(AuditResult).delete()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create movies records
+    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.PENDING)
+    m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.VERIFIED)
+    
+    db.add_all([m1, m2])
+    db.commit()
+    db.close()
+
+    # Verify export endpoint generates correct headers and JSON contents
+    resp = client.get("/api/files/export?source_path=movies&sort_by=filename&sort_order=asc")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/json"
+    assert "attachment; filename=plex_audit_snapshot_" in resp.headers["content-disposition"]
+    
+    data = resp.json()
+    assert len(data) == 2
+    assert data[0]["filename"] == "A_Movie.mkv"
+    assert data[1]["filename"] == "B_Movie.mkv"

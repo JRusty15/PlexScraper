@@ -483,6 +483,152 @@ def get_files(
         logger.error(f"Error fetching files: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/files/export")
+def export_files(
+    status: str | None = None, 
+    source_path: str | None = None,
+    search: str | None = None,
+    sort_by: str | None = "added_at",
+    sort_order: str | None = "desc",
+    db: Session = Depends(get_db)
+):
+    """Generates a downloadable JSON file containing all matching media files without pagination."""
+    try:
+        query = db.query(MediaFile)
+        
+        # Apply filters
+        if status:
+            if status.startswith("FLAGGED"):
+                query = query.filter(MediaFile.status.like("FLAGGED_%"))
+            else:
+                query = query.filter(MediaFile.status == status)
+                
+        if source_path:
+            sp_lower = source_path.lower()
+            if sp_lower == "movies":
+                query = query.filter(
+                    (MediaFile.media_type == "movie") | 
+                    (MediaFile.filepath.like("%movies%")) | 
+                    (MediaFile.filepath.like("%Movies%"))
+                )
+            elif sp_lower == "tv":
+                query = query.filter(
+                    (MediaFile.media_type == "episode") | 
+                    (MediaFile.filepath.like("%tv%")) | 
+                    (MediaFile.filepath.like("%TV%")) |
+                    (MediaFile.filepath.like("%show%")) |
+                    (MediaFile.filepath.like("%Show%"))
+                )
+                
+        if search:
+            query = query.filter(MediaFile.filename.like(f"%{search}%"))
+            
+        # Apply Sorting
+        if sort_by == "confidence":
+            from app.database import AuditResult
+            from sqlalchemy import func
+            subq = db.query(
+                AuditResult.media_file_id,
+                func.max(AuditResult.id).label("max_id")
+            ).group_by(AuditResult.media_file_id).subquery()
+            query = query.outerjoin(subq, MediaFile.id == subq.c.media_file_id)\
+                         .outerjoin(AuditResult, AuditResult.id == subq.c.max_id)
+            if sort_order == "asc":
+                query = query.order_by(AuditResult.confidence_score.asc())
+            else:
+                query = query.order_by(AuditResult.confidence_score.desc())
+        elif sort_by in ["last_audited", "audited_at"]:
+            from app.database import AuditResult
+            from sqlalchemy import func
+            subq = db.query(
+                AuditResult.media_file_id,
+                func.max(AuditResult.id).label("max_id")
+            ).group_by(AuditResult.media_file_id).subquery()
+            query = query.outerjoin(subq, MediaFile.id == subq.c.media_file_id)\
+                         .outerjoin(AuditResult, AuditResult.id == subq.c.max_id)
+            if sort_order == "asc":
+                query = query.order_by(AuditResult.audited_at.asc())
+            else:
+                query = query.order_by(AuditResult.audited_at.desc())
+        elif sort_by == "filename":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.filename.asc())
+            else:
+                query = query.order_by(MediaFile.filename.desc())
+        elif sort_by == "filepath":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.filepath.asc())
+            else:
+                query = query.order_by(MediaFile.filepath.desc())
+        else:
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.added_at.asc())
+            else:
+                query = query.order_by(MediaFile.added_at.desc())
+
+        # Load all records
+        from sqlalchemy.orm import joinedload
+        files = query.options(joinedload(MediaFile.results)).all()
+        
+        result_list = []
+        for f in files:
+            latest_res = None
+            if f.results:
+                sorted_res = sorted(f.results, key=lambda r: r.audited_at, reverse=True)
+                latest_res = sorted_res[0]
+                
+            res_data = None
+            if latest_res:
+                res_data = {
+                    "ffprobe_valid": latest_res.ffprobe_valid,
+                    "duration_actual": latest_res.duration_actual,
+                    "duration_variance": latest_res.duration_variance,
+                    "video_codec": latest_res.video_codec,
+                    "audio_codec": latest_res.audio_codec,
+                    "container_format": latest_res.container_format,
+                    "audio_tracks_info": latest_res.audio_tracks_info,
+                    "vlm_title_verified": latest_res.vlm_title_verified,
+                    "vlm_credits_verified": latest_res.vlm_credits_verified,
+                    "vlm_sanity_check_passed": latest_res.vlm_sanity_check_passed,
+                    "keyframes_paths": latest_res.keyframes_paths,
+                    "detected_languages": latest_res.detected_languages,
+                    "audio_transcript_snippet": latest_res.audio_transcript_snippet,
+                    "audio_clips_paths": latest_res.audio_clips_paths,
+                    "confidence_score": latest_res.confidence_score,
+                    "notes": latest_res.notes,
+                    "is_extended_audit": latest_res.is_extended_audit,
+                    "extended_audit_passed": latest_res.extended_audit_passed,
+                    "extended_audit_notes": latest_res.extended_audit_notes
+                }
+                
+            result_list.append({
+                "id": f.id,
+                "filepath": f.filepath,
+                "filename": f.filename,
+                "title": f.title,
+                "media_type": f.media_type,
+                "expected_duration": f.expected_duration,
+                "status": f.status,
+                "added_at": str(f.added_at),
+                "audit_result": res_data
+            })
+            
+        from fastapi.responses import Response
+        import json
+        content = json.dumps(result_list, indent=2)
+        
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"plex_audit_snapshot_{timestamp}.json"
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+        return Response(content=content, media_type="application/json", headers=headers)
+    except Exception as e:
+        logger.error(f"Error exporting files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/files/{file_id}/requeue")
 def requeue_file(file_id: int, db: Session = Depends(get_db)):
     """Manually adds a file back to the audit queue."""
