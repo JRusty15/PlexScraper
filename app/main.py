@@ -842,6 +842,55 @@ def requeue_by_status(status: str, db: Session = Depends(get_db)):
     worker.start()
     return {"message": f"Successfully requeued {count} files in status '{status}'."}
 
+def save_vlm_feedback(workspace_root: str, media_file: MediaFile, result: AuditResult):
+    """Saves a corrected VLM audit example as a few-shot feedback item."""
+    import json
+    try:
+        feedback_path = Path(workspace_root) / "data" / "vlm_feedback.json"
+        feedback_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        feedback_list = []
+        if feedback_path.exists():
+            with open(feedback_path, "r", encoding="utf-8") as f:
+                try:
+                    feedback_list = json.load(f)
+                except Exception:
+                    pass
+                
+        # Check if already exists to avoid duplicates
+        for fb in feedback_list:
+            if fb.get("filepath") == media_file.filepath:
+                return
+                
+        # Extract VLM logs/reasons
+        notes = result.notes or ""
+        keyframes = []
+        if result.keyframes_paths:
+            try:
+                keyframes = json.loads(result.keyframes_paths)
+            except Exception:
+                pass
+                
+        feedback_item = {
+            "filepath": media_file.filepath,
+            "title": media_file.title,
+            "notes": notes,
+            "keyframes_paths": keyframes,
+            "added_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        feedback_list.append(feedback_item)
+        
+        # Keep only the last 5 corrections to avoid context size explosion in Ollama chat prompts
+        feedback_list = feedback_list[-5:]
+        
+        with open(feedback_path, "w", encoding="utf-8") as f:
+            json.dump(feedback_list, f, indent=2)
+            
+        logger.info(f"VLM feedback saved for file: {media_file.filepath}")
+    except Exception as e:
+        logger.error(f"Failed to save VLM feedback: {e}")
+
 @app.post("/api/files/{file_id}/manual-verify")
 def manual_verify_file(file_id: int, db: Session = Depends(get_db)):
     """Manually marks a file as verified."""
@@ -849,6 +898,9 @@ def manual_verify_file(file_id: int, db: Session = Depends(get_db)):
     if not media_file:
         raise HTTPException(status_code=404, detail="File not found")
         
+    # Check prior status to see if it was a VLM failure we can learn from
+    was_flagged = media_file.status == FileStatus.FLAGGED_TITLE
+    
     media_file.status = FileStatus.VERIFIED
     
     # Check if there is an AuditResult, or create a new one
@@ -856,6 +908,10 @@ def manual_verify_file(file_id: int, db: Session = Depends(get_db)):
     if not result:
         result = AuditResult(media_file_id=file_id)
         db.add(result)
+        
+    if was_flagged and result:
+        # Save VLM feedback before changing the result status
+        save_vlm_feedback(".", media_file, result)
         
     result.status = FileStatus.VERIFIED
     result.confidence_score = 100

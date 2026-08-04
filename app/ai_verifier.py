@@ -172,6 +172,42 @@ class AIVerifier:
                 )
                 contradiction_examples = "a 2D cartoon/anime (unless it's an animated show), a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
 
+            # Load feedback chat history for cognitive learning
+            chat_history = []
+            try:
+                feedback_path = self.workspace_root / "data" / "vlm_feedback.json"
+                if feedback_path.exists():
+                    with open(feedback_path, "r", encoding="utf-8") as f:
+                        feedback_items = json.load(f)
+                    for item in feedback_items:
+                        fb_title = item.get("title")
+                        fb_notes = item.get("notes", "")
+                        fb_kf_paths = item.get("keyframes_paths", [])
+                        fb_images_b64 = []
+                        # Encode up to 3 keyframe images of the feedback sample to keep payload manageable
+                        for p in fb_kf_paths[:3]:
+                            try:
+                                fb_images_b64.append(self._encode_image(p))
+                            except Exception:
+                                pass
+                        if fb_images_b64:
+                            chat_history.append({
+                                "role": "user",
+                                "content": f"Here is an example of a video for expected title '{fb_title}'. You previously incorrectly failed it with the reason: '{fb_notes}'. Note that these frames are actually correct and match.",
+                                "images": fb_images_b64
+                            })
+                            chat_history.append({
+                                "role": "assistant",
+                                "content": json.dumps({
+                                    "content_matches": True,
+                                    "confidence": 1.0,
+                                    "description": f"Verified match for {fb_title}",
+                                    "reason": "Acknowledged. This style and setting is correct."
+                                })
+                            })
+            except Exception as e:
+                logger.warning(f"Failed to load VLM feedback for chat history: {e}")
+
             # Since keyframes are sampled at 1m, 2m, 3m, 4m, 5m followed by percentages:
             # First 5 frames are early checks, last frame is credits, middle ones are sanity checks.
             if len(keyframe_paths) >= 6:
@@ -197,7 +233,7 @@ class AIVerifier:
                     f"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt with multiple images to Qwen2.5-VL...")
-                sanity_resp = await self._query_ollama(prompt, images_b64)
+                sanity_resp = await self._query_ollama(prompt, images_b64, chat_history=chat_history)
                 logger.info(f"Stage 3 Response: {sanity_resp}")
                 results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
@@ -218,7 +254,7 @@ class AIVerifier:
                     f"}}"
                 )
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
-                sanity_resp = await self._query_ollama(prompt, img_b64)
+                sanity_resp = await self._query_ollama(prompt, img_b64, chat_history=chat_history)
                 logger.info(f"Stage 3 Response: {sanity_resp}")
                 results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
@@ -228,23 +264,27 @@ class AIVerifier:
 
         return results
 
-    async def _query_ollama(self, prompt: str, images_b64: list | str) -> dict:
-        """Sends request to local Ollama API with one or more base64 encoded images."""
+    async def _query_ollama(self, prompt: str, images_b64: list | str, chat_history: list = None) -> dict:
+        """Sends request to local Ollama API with one or more base64 encoded images, optionally prepended with history."""
         if isinstance(images_b64, str):
             images_b64 = [images_b64]
             
         model = get_system_config("OLLAMA_MODEL", "qwen2.5-vl")
         api_url = get_system_config("OLLAMA_API_URL", "http://localhost:11434")
         
+        messages = []
+        if chat_history:
+            messages.extend(chat_history)
+            
+        messages.append({
+            "role": "user",
+            "content": prompt,
+            "images": images_b64
+        })
+        
         payload = {
             "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": images_b64
-                }
-            ],
+            "messages": messages,
             "options": {
                 "num_ctx": 16384,
                 "temperature": 0.2
