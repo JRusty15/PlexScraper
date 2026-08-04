@@ -163,6 +163,21 @@ def update_pipeline_config(config: ConfigUpdateRequest, db: Session = Depends(ge
             "PLEX_TOKEN": config.plex_token
         }
         
+        # Pre-resolve Plex machineIdentifier if possible
+        if config.plex_url and config.plex_token:
+            try:
+                from plexapi.server import PlexServer
+                import socket
+                orig_timeout = socket.getdefaulttimeout()
+                socket.setdefaulttimeout(3.0)
+                try:
+                    server = PlexServer(config.plex_url, config.plex_token)
+                    settings["PLEX_MACHINE_IDENTIFIER"] = server.machineIdentifier
+                finally:
+                    socket.setdefaulttimeout(orig_timeout)
+            except Exception as pe:
+                logger.warning(f"Could not resolve Plex machineIdentifier during config save: {pe}")
+        
         # Update SQLite DB records
         for key, val in settings.items():
             record = db.query(SystemConfig).filter(SystemConfig.key == key).first()
@@ -317,6 +332,38 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
 
     return {"message": f"Scan completed. Discovered and queued {new_files} new files."}
 
+def get_plex_machine_identifier(db: Session) -> str:
+    """Helper to resolve and cache Plex machineIdentifier in database."""
+    val = get_system_config("PLEX_MACHINE_IDENTIFIER", "")
+    if val:
+        return val
+    plex_url = get_system_config("PLEX_URL", "")
+    plex_token = get_system_config("PLEX_TOKEN", "")
+    if plex_url and plex_token:
+        try:
+            from plexapi.server import PlexServer
+            import socket
+            orig_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(3.0)
+            try:
+                server = PlexServer(plex_url, plex_token)
+                machine_id = server.machineIdentifier
+                if machine_id:
+                    # Save to DB configuration
+                    record = db.query(SystemConfig).filter(SystemConfig.key == "PLEX_MACHINE_IDENTIFIER").first()
+                    if not record:
+                        record = SystemConfig(key="PLEX_MACHINE_IDENTIFIER", value=machine_id)
+                        db.add(record)
+                    else:
+                        record.value = machine_id
+                    db.commit()
+                    return machine_id
+            finally:
+                socket.setdefaulttimeout(orig_timeout)
+        except Exception as e:
+            logger.warning(f"Could not resolve Plex machineIdentifier dynamically: {e}")
+    return ""
+
 @app.get("/api/files")
 def get_files(
     status: str | None = None, 
@@ -428,6 +475,9 @@ def get_files(
         from sqlalchemy.orm import joinedload
         files = query.options(joinedload(MediaFile.results)).offset(offset).limit(page_size).all()
         
+        plex_url = get_system_config("PLEX_URL", "")
+        machine_id = get_plex_machine_identifier(db)
+        
         result_list = []
         for f in files:
             # Get latest audit result from preloaded list in memory to avoid queries
@@ -461,6 +511,11 @@ def get_files(
                     "extended_audit_notes": latest_res.extended_audit_notes
                 }
                 
+            plex_play_url = None
+            if f.plex_rating_key and plex_url and machine_id:
+                base_plex = plex_url.rstrip("/")
+                plex_play_url = f"{base_plex}/web/index.html#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{f.plex_rating_key}"
+                
             result_list.append({
                 "id": f.id,
                 "filepath": f.filepath,
@@ -470,7 +525,8 @@ def get_files(
                 "expected_duration": f.expected_duration,
                 "status": f.status,
                 "added_at": f.added_at,
-                "audit_result": res_data
+                "audit_result": res_data,
+                "plex_play_url": plex_play_url
             })
             
         return {
@@ -570,6 +626,9 @@ def export_files(
         from sqlalchemy.orm import joinedload
         files = query.options(joinedload(MediaFile.results)).all()
         
+        plex_url = get_system_config("PLEX_URL", "")
+        machine_id = get_plex_machine_identifier(db)
+        
         result_list = []
         for f in files:
             latest_res = None
@@ -601,6 +660,11 @@ def export_files(
                     "extended_audit_notes": latest_res.extended_audit_notes
                 }
                 
+            plex_play_url = None
+            if f.plex_rating_key and plex_url and machine_id:
+                base_plex = plex_url.rstrip("/")
+                plex_play_url = f"{base_plex}/web/index.html#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{f.plex_rating_key}"
+                
             result_list.append({
                 "id": f.id,
                 "filepath": f.filepath,
@@ -610,7 +674,8 @@ def export_files(
                 "expected_duration": f.expected_duration,
                 "status": f.status,
                 "added_at": str(f.added_at),
-                "audit_result": res_data
+                "audit_result": res_data,
+                "plex_play_url": plex_play_url
             })
             
         from fastapi.responses import Response

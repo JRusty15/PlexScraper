@@ -436,11 +436,17 @@ def test_get_files_sorting_and_source_path_filtering():
     db.commit()
     
     # Create movies and tv shows records
-    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.PENDING)
+    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.PENDING, plex_rating_key="12345")
     m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.VERIFIED)
     t1 = MediaFile(filepath="/media/TV/Show_A.mkv", filename="Show_A.mkv", media_type="episode", status=FileStatus.PENDING)
     
     db.add_all([m1, m2, t1])
+    db.commit()
+    
+    # Add SystemConfig parameters for Plex
+    from app.database import SystemConfig
+    db.add(SystemConfig(key="PLEX_URL", value="http://10.0.0.54:32400"))
+    db.add(SystemConfig(key="PLEX_MACHINE_IDENTIFIER", value="mock_machine_id"))
     db.commit()
     
     # Add audit results for confidence/date sorting tests
@@ -456,6 +462,9 @@ def test_get_files_sorting_and_source_path_filtering():
     resp = client.get("/api/files?source_path=movies")
     assert resp.status_code == 200
     assert resp.json()["total_items"] == 2
+    items = resp.json()["items"]
+    m1_item = next(i for i in items if i["filename"] == "A_Movie.mkv")
+    assert m1_item["plex_play_url"].endswith("/web/index.html#!/server/mock_machine_id/details?key=%2Flibrary%2Fmetadata%2F12345")
     
     # 2. Test filtering by source_path=tv
     resp = client.get("/api/files?source_path=tv")
