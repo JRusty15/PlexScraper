@@ -354,7 +354,7 @@ def test_run_throttled_process_timeout():
     import pytest
     from app.media_processor import run_throttled_process
     
-    cmd = ["powershell", "-c", "Start-Sleep 10"]
+    cmd = ["sleep", "10"]
     
     with pytest.raises(TimeoutError) as exc_info:
         run_throttled_process(cmd, timeout=1)
@@ -424,3 +424,52 @@ def test_extended_audit_endpoints_and_worker():
     assert item["audit_result"]["is_extended_audit"] is True
     assert item["audit_result"]["extended_audit_passed"] is True
     assert item["audit_result"]["extended_audit_notes"] == "Mock dialogue matched perfectly with overview."
+
+def test_get_files_sorting_and_source_path_filtering():
+    # Setup test database connection
+    from app.database import MediaFile, AuditResult
+    db = TestingSessionLocal()
+    
+    # Clean previous records for isolated check
+    db.query(AuditResult).delete()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create movies and tv shows records
+    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.PENDING)
+    m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.VERIFIED)
+    t1 = MediaFile(filepath="/media/TV/Show_A.mkv", filename="Show_A.mkv", media_type="episode", status=FileStatus.PENDING)
+    
+    db.add_all([m1, m2, t1])
+    db.commit()
+    
+    # Add audit results for confidence/date sorting tests
+    r1 = AuditResult(media_file_id=m1.id, confidence_score=80, status=FileStatus.VERIFIED)
+    r2 = AuditResult(media_file_id=m2.id, confidence_score=95, status=FileStatus.VERIFIED)
+    
+    db.add_all([r1, r2])
+    db.commit()
+    
+    db.close()
+    
+    # 1. Test filtering by source_path=movies
+    resp = client.get("/api/files?source_path=movies")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 2
+    
+    # 2. Test filtering by source_path=tv
+    resp = client.get("/api/files?source_path=tv")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 1
+    assert resp.json()["items"][0]["filename"] == "Show_A.mkv"
+    
+    # 3. Test sorting by filename asc
+    resp = client.get("/api/files?sort_by=filename&sort_order=asc")
+    filenames = [item["filename"] for item in resp.json()["items"]]
+    assert filenames == ["A_Movie.mkv", "B_Movie.mkv", "Show_A.mkv"]
+    
+    # 4. Test sorting by confidence score desc
+    resp = client.get("/api/files?sort_by=confidence&sort_order=desc")
+    # m2 has 95, m1 has 80, t1 has none
+    assert resp.json()["items"][0]["filename"] == "B_Movie.mkv"
+    assert resp.json()["items"][1]["filename"] == "A_Movie.mkv"

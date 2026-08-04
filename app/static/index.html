@@ -82,6 +82,13 @@
                     <h2>Media Inventory & Audit Logs</h2>
                     <div class="filters">
                         <input type="text" id="search-input" placeholder="Search files..." oninput="triggerSearch()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem;">
+                        
+                        <select id="source-filter" onchange="changeSourceFilter()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem; cursor: pointer; height: 32px; box-sizing: border-box;">
+                            <option value="all" style="background: var(--bg-base);">All Sources</option>
+                            <option value="movies" style="background: var(--bg-base);">Movies</option>
+                            <option value="tv" style="background: var(--bg-base);">TV Shows</option>
+                        </select>
+
                         <button id="btn-filter-all" class="filter-btn active" onclick="filterTable(event, 'all')">All</button>
                         <button id="btn-filter-VERIFIED" class="filter-btn" onclick="filterTable(event, 'VERIFIED')">Verified</button>
                         <button id="btn-filter-FLAGGED" class="filter-btn" onclick="filterTable(event, 'FLAGGED')">Flagged</button>
@@ -94,12 +101,12 @@
                     <table class="media-table">
                         <thead>
                             <tr>
-                                <th>File Name</th>
-                                <th>Media Path</th>
+                                <th onclick="toggleSort('filename')" style="cursor: pointer; user-select: none;">File Name <span id="sort-indicator-filename" style="font-size: 0.75rem;">↕</span></th>
+                                <th onclick="toggleSort('filepath')" style="cursor: pointer; user-select: none;">Media Path <span id="sort-indicator-filepath" style="font-size: 0.75rem;">↕</span></th>
                                 <th>Runtime (Plex/Actual)</th>
                                 <th>Status</th>
                                 <th onclick="toggleSort('confidence')" style="cursor: pointer; user-select: none;">Confidence <span id="sort-indicator-confidence" style="font-size: 0.75rem;">↕</span></th>
-                                <th>Last Audited</th>
+                                <th onclick="toggleSort('last_audited')" style="cursor: pointer; user-select: none;">Last Audited <span id="sort-indicator-last_audited" style="font-size: 0.75rem;">↕</span></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -316,10 +323,12 @@
         let currentPage = 1;
         let pageSize = 20; // Default to 20
         let currentStatusFilter = 'all';
+        let currentSourceFilter = 'all';
         let currentSearchQuery = '';
         let totalItemsCount = 0;
         let searchTimeout = null;
         let currentView = 'dashboard';
+        let currentSortBy = 'added_at';
         let currentSortOrder = 'desc';
         let serverVersion = null;
 
@@ -328,6 +337,11 @@
             
             currentView = params.get('view') || 'dashboard';
             currentStatusFilter = params.get('status') || 'all';
+            currentSourceFilter = params.get('source_path') || 'all';
+            
+            // Set dynamic source select dropdown value
+            const sourceSelect = document.getElementById('source-filter');
+            if (sourceSelect) sourceSelect.value = currentSourceFilter;
             
             // Set dynamic page size from URL if present
             const pageSizeParam = params.get('page_size');
@@ -376,13 +390,23 @@
         }
 
         function updateSortIndicatorUI() {
-            const indicator = document.getElementById('sort-indicator-confidence');
-            if (!indicator) return;
-            if (currentSortBy === 'confidence') {
-                indicator.innerText = (currentSortOrder === 'desc') ? '▼' : '▲';
-            } else {
-                indicator.innerText = '↕';
-            }
+            const fields = ['filename', 'filepath', 'confidence', 'last_audited'];
+            fields.forEach(field => {
+                const indicator = document.getElementById(`sort-indicator-${field}`);
+                if (!indicator) return;
+                if (currentSortBy === field) {
+                    indicator.innerText = (currentSortOrder === 'desc') ? '▼' : '▲';
+                } else {
+                    indicator.innerText = '↕';
+                }
+            });
+        }
+
+        function changeSourceFilter() {
+            currentSourceFilter = document.getElementById('source-filter').value || 'all';
+            currentPage = 1; // reset page
+            updateURL();
+            fetchFiles(true);
         }
 
         function changePageSize() {
@@ -399,6 +423,9 @@
             }
             if (currentStatusFilter !== 'all') {
                 params.set('status', currentStatusFilter);
+            }
+            if (currentSourceFilter !== 'all') {
+                params.set('source_path', currentSourceFilter);
             }
             if (currentPage !== 1) {
                 params.set('page', currentPage);
@@ -489,6 +516,9 @@
                 let url = `/api/files?page=${currentPage}&page_size=${pageSize}&sort_by=${currentSortBy}&sort_order=${currentSortOrder}`;
                 if (currentStatusFilter !== 'all') {
                     url += `&status=${currentStatusFilter}`;
+                }
+                if (currentSourceFilter !== 'all') {
+                    url += `&source_path=${currentSourceFilter}`;
                 }
                 if (currentSearchQuery) {
                     url += `&search=${encodeURIComponent(currentSearchQuery)}`;

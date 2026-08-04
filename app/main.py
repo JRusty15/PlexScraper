@@ -320,6 +320,7 @@ def trigger_filesystem_scan(request: ScanRequest = None, db: Session = Depends(g
 @app.get("/api/files")
 def get_files(
     status: str | None = None, 
+    source_path: str | None = None,
     page: int = 1, 
     page_size: int = 20, 
     search: str | None = None,
@@ -338,6 +339,23 @@ def get_files(
             else:
                 query = query.filter(MediaFile.status == status)
                 
+        if source_path:
+            sp_lower = source_path.lower()
+            if sp_lower == "movies":
+                query = query.filter(
+                    (MediaFile.media_type == "movie") | 
+                    (MediaFile.filepath.like("%movies%")) | 
+                    (MediaFile.filepath.like("%Movies%"))
+                )
+            elif sp_lower == "tv":
+                query = query.filter(
+                    (MediaFile.media_type == "episode") | 
+                    (MediaFile.filepath.like("%tv%")) | 
+                    (MediaFile.filepath.like("%TV%")) |
+                    (MediaFile.filepath.like("%show%")) |
+                    (MediaFile.filepath.like("%Show%"))
+                )
+                
         if search:
             query = query.filter(MediaFile.filename.like(f"%{search}%"))
             
@@ -345,7 +363,6 @@ def get_files(
         total_count = query.count()
         
         # Apply Sorting
-        # For sorting by confidence, we need to join the latest AuditResult
         if sort_by == "confidence":
             from app.database import AuditResult
             from sqlalchemy import func
@@ -353,25 +370,52 @@ def get_files(
             # Subquery to get latest audit result per media file
             subq = db.query(
                 AuditResult.media_file_id,
-                func.max(AuditResult.audited_at).label("max_audited_at")
+                func.max(AuditResult.id).label("max_id")
             ).group_by(AuditResult.media_file_id).subquery()
             
-            # Join query with AuditResult
             query = query.outerjoin(
-                AuditResult, 
-                (MediaFile.id == AuditResult.media_file_id)
-            ).outerjoin(
                 subq,
-                (AuditResult.media_file_id == subq.c.media_file_id) &
-                (AuditResult.audited_at == subq.c.max_audited_at)
+                MediaFile.id == subq.c.media_file_id
+            ).outerjoin(
+                AuditResult,
+                AuditResult.id == subq.c.max_id
             )
             
             if sort_order == "asc":
-                # Standard ascending sort
                 query = query.order_by(AuditResult.confidence_score.asc())
             else:
-                # Standard descending sort
                 query = query.order_by(AuditResult.confidence_score.desc())
+        elif sort_by in ["last_audited", "audited_at"]:
+            from app.database import AuditResult
+            from sqlalchemy import func
+            
+            subq = db.query(
+                AuditResult.media_file_id,
+                func.max(AuditResult.id).label("max_id")
+            ).group_by(AuditResult.media_file_id).subquery()
+            
+            query = query.outerjoin(
+                subq,
+                MediaFile.id == subq.c.media_file_id
+            ).outerjoin(
+                AuditResult,
+                AuditResult.id == subq.c.max_id
+            )
+            
+            if sort_order == "asc":
+                query = query.order_by(AuditResult.audited_at.asc())
+            else:
+                query = query.order_by(AuditResult.audited_at.desc())
+        elif sort_by == "filename":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.filename.asc())
+            else:
+                query = query.order_by(MediaFile.filename.desc())
+        elif sort_by == "filepath":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.filepath.asc())
+            else:
+                query = query.order_by(MediaFile.filepath.desc())
         else:
             # Default sorting by added_at
             if sort_order == "asc":
