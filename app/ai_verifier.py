@@ -190,9 +190,13 @@ class AIVerifier:
             else:
                 genre_context = (
                     f"The expected show/movie '{clean_title}' is a live-action film or series. "
-                    "Therefore, the frames should show normal live-action environments/actors."
+                    "Therefore, the frames should show normal live-action environments/actors. "
+                    "Note that many live-action shows use brief animated transition bumpers, cartoon titles, "
+                    "special effects, or stylized title sequences (such as space backgrounds or orbit lines). "
+                    "Do NOT reject the file for having these animated/cartoonish elements in some of the frames, "
+                    "as long as there are also live-action scenes, settings, or characters present in other frames."
                 )
-                contradiction_examples = "a 2D cartoon/anime (unless it's an animated show), a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
+                contradiction_examples = "a 2D cartoon/anime throughout the entire video, a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
 
             # Load feedback chat history for cognitive learning
             chat_history = []
@@ -453,9 +457,13 @@ class AIVerifier:
         else:
             genre_context = (
                 f"The expected show/movie '{title}' is a live-action film or series. "
-                "Therefore, the frames should show normal live-action environments/actors."
+                "Therefore, the frames should show normal live-action environments/actors. "
+                "Note that many live-action shows use brief animated transition bumpers, cartoon titles, "
+                "special effects, or stylized title sequences (such as space backgrounds or orbit lines). "
+                "Do NOT reject the file for having these animated/cartoonish elements in some of the frames, "
+                "as long as there are also live-action scenes, settings, or characters present in other frames."
             )
-            contradiction_examples = "a 2D cartoon/anime (unless it's an animated show), a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
+            contradiction_examples = "a 2D cartoon/anime throughout the entire video, a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
 
         try:
             images_b64 = [self._encode_image(p) for p in sampled_paths]
