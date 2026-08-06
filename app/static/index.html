@@ -314,6 +314,7 @@
                 <button class="btn btn-secondary" id="modal-btn-rescan" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Rescan File</button>
                 <button class="btn btn-success" id="modal-btn-verify" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Mark Correct</button>
                 <button class="btn btn-danger" id="modal-btn-flag" style="font-size: 0.85rem; padding: 0.5rem 1rem; color: white;">Mark Incorrect</button>
+                <button class="btn btn-danger" id="modal-btn-delete" style="font-size: 0.85rem; padding: 0.5rem 1rem; color: white; background-color: #8b0000; border-color: #8b0000;">Delete File</button>
                 <button class="btn btn-secondary" onclick="closeModal()" style="font-size: 0.85rem; padding: 0.5rem 1rem;">Close</button>
             </div>
         </div>
@@ -860,6 +861,31 @@
             }
         }
 
+        async function deleteFile(id) {
+            const file = filesData.find(f => f.id === id);
+            if (!file) return;
+            
+            if (!confirm(`Are you absolutely sure you want to permanently delete this file from disk?\n\nFile: ${file.filename}\nPath: ${file.filepath}`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/files/${id}`, { method: 'DELETE' });
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(data.message || "File deleted successfully.", 'success');
+                    closeModal();
+                    await fetchFiles(true);
+                    await fetchStatus();
+                } else {
+                    showToast(data.detail || "Failed to delete file.", 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to delete file.", 'error');
+            }
+        }
+
         async function loadPipelineConfig() {
             try {
                 const response = await fetch('/api/pipeline/config');
@@ -1133,6 +1159,7 @@
             document.getElementById('modal-btn-rescan').onclick = () => manualRescan(id);
             document.getElementById('modal-btn-verify').onclick = () => manualVerify(id);
             document.getElementById('modal-btn-flag').onclick = () => manualFlag(id);
+            document.getElementById('modal-btn-delete').onclick = () => deleteFile(id);
 
             const extendedBtn = document.getElementById('modal-btn-extended');
             extendedBtn.onclick = () => runExtendedAudit(id);
