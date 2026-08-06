@@ -219,7 +219,7 @@ class QueueWorker:
                         result.keyframes_paths = json.dumps(dense_kf_paths)
                         
                         vlm_res = await self.verifier.verify_visuals_dense(
-                            dense_kf_paths, resolved_title, expected_summary or "No plot summary available."
+                            dense_kf_paths, resolved_title, expected_summary or "No plot summary available.", filepath=media_file.filepath
                         )
                         result.extended_audit_passed = vlm_res["matched"]
                         result.extended_audit_notes = vlm_res["reason"]
@@ -264,7 +264,8 @@ class QueueWorker:
                     vlm_res = await self.verifier.verify_visuals(
                         kf_paths, 
                         resolved_title or media_file.title or media_file.filename,
-                        metadata=plex_meta
+                        metadata=plex_meta,
+                        filepath=media_file.filepath
                     )
                     result.vlm_title_verified = vlm_res["title_verified"]
                     result.vlm_credits_verified = vlm_res["credits_verified"]

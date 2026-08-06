@@ -70,7 +70,7 @@ class AIVerifier:
             
         return clean or raw_title
 
-    async def verify_visuals(self, keyframe_paths: list, expected_title: str, metadata: dict = None) -> dict:
+    async def verify_visuals(self, keyframe_paths: list, expected_title: str, metadata: dict = None, filepath: str = None) -> dict:
         """Runs Qwen2.5-VL via Ollama API to verify title cards, credits, and visual context."""
         clean_title = self._sanitize_title(expected_title)
         logger.info(f"=== AI Visual Verification Started (Raw: '{expected_title}', Sanitized: '{clean_title}') ===")
@@ -85,13 +85,22 @@ class AIVerifier:
             logger.warning("No keyframes found for visual check.")
             return results
 
+        # Determine the best title for title card check (Show Title for TV episodes, Movie Title for movies)
+        show_title = (metadata or {}).get("show_title")
+        episode_title = (metadata or {}).get("title") if show_title else None
+        
+        if show_title and episode_title:
+            search_titles = f"'{show_title}' or the episode title '{episode_title}'"
+        else:
+            search_titles = f"'{clean_title}'"
+
         # 1. Title verification (typically early keyframes: e.g. 1%, 2%, 4%, 7%, 10%)
         try:
             early_keyframes = keyframe_paths[:5]  # first 5 keyframes
             images_b64 = [self._encode_image(p) for p in early_keyframes]
             prompt = (
                 f"Analyze these {len(early_keyframes)} early images from the beginning of a video. "
-                f"Is the title '{clean_title}' (or a closely related variant representing the show/movie) "
+                f"Is the title {search_titles} (or a closely related variant representing the show/movie) "
                 f"displayed or visible as overlay text on screen in any of these frames? "
                 f"Look closely at title cards, opening credits, or overlay text. "
                 f"Respond with a JSON object: {{\"title_found\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
@@ -153,6 +162,19 @@ class AIVerifier:
                     meta_str += f"\n- Key Cast/Actors: {', '.join(metadata['roles'])}"
                 if metadata.get("summary"):
                     meta_str += f"\n- Plot Summary: {metadata['summary']}"
+
+            # Check if animated via filename / filepath keywords
+            title_lower = clean_title.lower()
+            path_lower = filepath.lower() if filepath else ""
+            animated_keywords = [
+                "simpsons", "futurama", "family guy", "american dad", "robot chicken", 
+                "ren and stimpy", "ren & stimpy", "ariel", "arthur", "bunnicula", 
+                "daniel tiger", "duckman", "garfield", "reboot", "rick and morty", 
+                "rick & morty", "trash truck", "looney tunes", "mickey mouse", "cartoon",
+                "animated", "animation"
+            ]
+            if any(kw in title_lower or kw in path_lower for kw in animated_keywords):
+                is_animated = True
 
             # Set visual context guidelines dynamically based on genre
             if is_animated:
@@ -374,11 +396,13 @@ class AIVerifier:
         truncated_transcript = "\n".join(lines[:400])
         
         prompt = (
-            f"You are a media verification assistant. Verify if the following dialogue transcript matches the expected TV show episode plot summary.\n\n"
+            f"You are a media verification assistant. Verify if the following dialogue transcript is consistent with the expected TV show episode plot summary.\n\n"
             f"Expected Episode Title: {title}\n"
             f"Expected Episode Plot Overview: {summary}\n\n"
             f"Dialogue Transcript:\n{truncated_transcript}\n\n"
-            f"Analyze if the characters, key events, discussions, or topics in the dialogue transcript match the expected episode overview. "
+            f"Your task is to analyze if the characters, key events, discussions, or topics in the dialogue transcript are consistent with or could reasonably belong to the expected episode. You must be EXTREMELY LENIENT.\n"
+            f"Note that dialogue transcripts from subtitles may be conversational, fragmented, or cover only a portion of the episode, and may not explicitly state every plot point. If there are matching characters, topics, references, or general alignment, you must set matched to true.\n"
+            f"Only set matched to false if there is a clear, flagrant contradiction indicating this dialogue is from an entirely different show or movie.\n\n"
             f"Respond with a JSON object: {{\"matched\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
         )
         
@@ -395,7 +419,7 @@ class AIVerifier:
                 "reason": f"Extended dialogue check failed: {str(e)}"
             }
 
-    async def verify_visuals_dense(self, keyframe_paths: list, title: str, summary: str) -> dict:
+    async def verify_visuals_dense(self, keyframe_paths: list, title: str, summary: str, filepath: str = None) -> dict:
         """Processes a dense sequence of keyframes to verify if the visuals match the expected movie/episode plot."""
         results = {"matched": False, "reason": "No keyframes provided."}
         if not keyframe_paths:
@@ -407,13 +431,43 @@ class AIVerifier:
             step = len(keyframe_paths) / 12.0
             sampled_paths = [keyframe_paths[int(i * step)] for i in range(12)]
             
+        # Determine animated context dynamically
+        title_lower = title.lower()
+        path_lower = filepath.lower() if filepath else ""
+        animated_keywords = [
+            "simpsons", "futurama", "family guy", "american dad", "robot chicken", 
+            "ren and stimpy", "ren & stimpy", "ariel", "arthur", "bunnicula", 
+            "daniel tiger", "duckman", "garfield", "reboot", "rick and morty", 
+            "rick & morty", "trash truck", "looney tunes", "mickey mouse", "cartoon",
+            "animated", "animation"
+        ]
+        is_animated = any(kw in title_lower or kw in path_lower for kw in animated_keywords)
+        
+        if is_animated:
+            genre_context = (
+                f"The expected show/movie '{title}' is an ANIMATED cartoon or CGI movie. "
+                "Look closely for CGI styling or animated characters. "
+                "Do NOT reject it for being animated or showing realistic animated environments."
+            )
+            contradiction_examples = "a live-action news broadcast, a real-life sports match, a real-world home video with real people, or a static test pattern"
+        else:
+            genre_context = (
+                f"The expected show/movie '{title}' is a live-action film or series. "
+                "Therefore, the frames should show normal live-action environments/actors."
+            )
+            contradiction_examples = "a 2D cartoon/anime (unless it's an animated show), a real-life sports match, a news broadcast, a cooking show, a video game, or a home renovation channel"
+
         try:
             images_b64 = [self._encode_image(p) for p in sampled_paths]
             prompt = (
                 f"You are a media verification assistant. Analyze this sequence of {len(sampled_paths)} frames taken throughout a video.\n\n"
                 f"Expected Show/Movie Title: {title}\n"
                 f"Expected Plot Summary: {summary}\n\n"
-                f"Does the visual content of these frames (settings, characters, scenes, storylines) depict events that match the expected plot summary? "
+                f"Genre Context: {genre_context}\n\n"
+                f"Your task is to verify if the visual content of these frames (settings, characters, scenes, storylines) depicts events consistent with the expected title/plot summary. You must be EXTREMELY LENIENT.\n"
+                f"Remember that a small set of sampled frames cannot capture every detail, scene, or subplot of the expected plot summary.\n"
+                f"If the settings, characters, style, or any major element in these frames matches or is highly consistent with the expected title/summary, you must set matched to true.\n"
+                f"Only set matched to false if there is an undeniable, obvious contradiction (e.g. {contradiction_examples}).\n\n"
                 f"Respond with a JSON object: {{\"matched\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"string\"}}"
             )
             

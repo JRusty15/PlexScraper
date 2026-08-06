@@ -91,6 +91,7 @@ class PlexClient:
         """Fetches detailed TMDB metadata from local Plex Server for verification guidance."""
         meta = {
             "title": "",
+            "show_title": "",
             "summary": "",
             "genres": [],
             "roles": [],
@@ -102,10 +103,24 @@ class PlexClient:
         try:
             item = self.server.fetchItem(int(rating_key))
             meta["title"] = getattr(item, "title", "")
+            meta["show_title"] = getattr(item, "grandparentTitle", "")
             meta["summary"] = getattr(item, "summary", "")
-            meta["genres"] = [g.tag for g in getattr(item, "genres", [])] if hasattr(item, "genres") else []
-            meta["roles"] = [r.tag for r in getattr(item, "roles", [])][:5] if hasattr(item, "roles") else []
             meta["year"] = getattr(item, "year", None)
+            meta["roles"] = [r.tag for r in getattr(item, "roles", [])][:5] if hasattr(item, "roles") else []
+            
+            # Retrieve genres from the grandparent Show if it's an episode
+            genres = []
+            if hasattr(item, "genres"):
+                genres = [g.tag for g in item.genres]
+            
+            if getattr(item, "type", "") == "episode" and hasattr(item, "grandparent"):
+                try:
+                    grandparent = item.grandparent()
+                    if grandparent and hasattr(grandparent, "genres"):
+                        genres = [g.tag for g in grandparent.genres]
+                except Exception:
+                    pass
+            meta["genres"] = genres
         except Exception as e:
             logger.error(f"Error fetching metadata for rating key {rating_key}: {e}")
             
