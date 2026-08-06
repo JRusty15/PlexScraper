@@ -93,7 +93,15 @@
 
                         <button id="btn-filter-all" class="filter-btn active" onclick="filterTable(event, 'all')">All</button>
                         <button id="btn-filter-VERIFIED" class="filter-btn" onclick="filterTable(event, 'VERIFIED')">Verified</button>
-                        <button id="btn-filter-FLAGGED" class="filter-btn" onclick="filterTable(event, 'FLAGGED')">Flagged</button>
+                        <div style="display: inline-flex; align-items: center; gap: 0;">
+                            <button id="btn-filter-FLAGGED" class="filter-btn" onclick="filterTable(event, 'FLAGGED')" style="border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; height: 32px; box-sizing: border-box;">Flagged</button>
+                            <select id="select-flagged-type" onchange="filterFlaggedType(event)" style="padding: 0.4rem 0.5rem; height: 32px; border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-primary); border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; font-size: 0.85rem; font-family: inherit; cursor: pointer; outline: none; margin-left: 0; box-sizing: border-box; border-radius: 0 6px 6px 0;">
+                                <option value="FLAGGED" style="background: var(--bg-base);">All Flagged</option>
+                                <option value="FLAGGED_TITLE" style="background: var(--bg-base);">Title Card</option>
+                                <option value="FLAGGED_DURATION" style="background: var(--bg-base);">Duration</option>
+                                <option value="FLAGGED_CORRUPT" style="background: var(--bg-base);">Corrupt File</option>
+                            </select>
+                        </div>
                         <button id="btn-filter-PENDING" class="filter-btn" onclick="filterTable(event, 'PENDING')">Queue</button>
 
                         <button id="btn-export" class="btn btn-secondary btn-sm" onclick="exportSnapshot()" style="padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: var(--text-primary); margin-left: 0.5rem;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
@@ -110,7 +118,7 @@
                                 <th onclick="toggleSort('filename')" style="cursor: pointer; user-select: none;">File Name <span id="sort-indicator-filename" style="font-size: 0.75rem;">↕</span></th>
                                 <th onclick="toggleSort('filepath')" style="cursor: pointer; user-select: none;">Media Path <span id="sort-indicator-filepath" style="font-size: 0.75rem;">↕</span></th>
                                 <th>Runtime (Plex/Actual)</th>
-                                <th>Status</th>
+                                <th onclick="toggleSort('status')" style="cursor: pointer; user-select: none;">Status <span id="sort-indicator-status" style="font-size: 0.75rem;">↕</span></th>
                                 <th onclick="toggleSort('confidence')" style="cursor: pointer; user-select: none;">Confidence <span id="sort-indicator-confidence" style="font-size: 0.75rem;">↕</span></th>
                                 <th onclick="toggleSort('last_audited')" style="cursor: pointer; user-select: none;">Last Audited <span id="sort-indicator-last_audited" style="font-size: 0.75rem;">↕</span></th>
                                 <th>Actions</th>
@@ -378,7 +386,13 @@
             
             // Set active class on the corresponding filter button
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            const filterBtn = document.getElementById(`btn-filter-${currentStatusFilter}`);
+            let activeBtnId = currentStatusFilter;
+            if (currentStatusFilter.startsWith("FLAGGED")) {
+                activeBtnId = "FLAGGED";
+                const flaggedSelect = document.getElementById('select-flagged-type');
+                if (flaggedSelect) flaggedSelect.value = currentStatusFilter;
+            }
+            const filterBtn = document.getElementById(`btn-filter-${activeBtnId}`);
             if (filterBtn) {
                 filterBtn.classList.add('active');
             }
@@ -398,7 +412,7 @@
         }
 
         function updateSortIndicatorUI() {
-            const fields = ['filename', 'filepath', 'confidence', 'last_audited'];
+            const fields = ['filename', 'filepath', 'confidence', 'last_audited', 'status'];
             fields.forEach(field => {
                 const indicator = document.getElementById(`sort-indicator-${field}`);
                 if (!indicator) return;
@@ -682,15 +696,38 @@
         function filterTable(evt, status) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
             
+            let activeStatus = status;
+            if (status.startsWith("FLAGGED")) {
+                activeStatus = "FLAGGED";
+            }
+            
             if (evt && evt.target) {
                 evt.target.classList.add('active');
             } else {
-                const btn = document.getElementById(`btn-filter-${status}`);
+                const btn = document.getElementById(`btn-filter-${activeStatus}`);
                 if (btn) btn.classList.add('active');
+            }
+            
+            // Reset flagged type select if not selecting a flagged state
+            if (!status.startsWith("FLAGGED")) {
+                const flaggedSelect = document.getElementById('select-flagged-type');
+                if (flaggedSelect) flaggedSelect.value = "FLAGGED";
             }
             
             currentStatusFilter = status;
             currentPage = 1; // reset page
+            updateURL();
+            fetchFiles(true);
+        }
+
+        function filterFlaggedType(evt) {
+            const val = evt.target.value;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            const btn = document.getElementById('btn-filter-FLAGGED');
+            if (btn) btn.classList.add('active');
+            
+            currentStatusFilter = val;
+            currentPage = 1;
             updateURL();
             fetchFiles(true);
         }

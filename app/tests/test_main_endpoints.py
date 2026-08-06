@@ -436,9 +436,9 @@ def test_get_files_sorting_and_source_path_filtering():
     db.commit()
     
     # Create movies and tv shows records
-    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.PENDING, plex_rating_key="12345")
-    m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.VERIFIED)
-    t1 = MediaFile(filepath="/media/TV/Show_A.mkv", filename="Show_A.mkv", media_type="episode", status=FileStatus.PENDING)
+    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.FLAGGED_TITLE, plex_rating_key="12345")
+    m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.FLAGGED_CORRUPT)
+    t1 = MediaFile(filepath="/media/TV/Show_A.mkv", filename="Show_A.mkv", media_type="episode", status=FileStatus.VERIFIED)
     
     db.add_all([m1, m2, t1])
     db.commit()
@@ -450,8 +450,8 @@ def test_get_files_sorting_and_source_path_filtering():
     db.commit()
     
     # Add audit results for confidence/date sorting tests
-    r1 = AuditResult(media_file_id=m1.id, confidence_score=80, status=FileStatus.VERIFIED)
-    r2 = AuditResult(media_file_id=m2.id, confidence_score=95, status=FileStatus.VERIFIED)
+    r1 = AuditResult(media_file_id=m1.id, confidence_score=80, status=FileStatus.FLAGGED_TITLE)
+    r2 = AuditResult(media_file_id=m2.id, confidence_score=95, status=FileStatus.FLAGGED_CORRUPT)
     
     db.add_all([r1, r2])
     db.commit()
@@ -482,6 +482,22 @@ def test_get_files_sorting_and_source_path_filtering():
     # m2 has 95, m1 has 80, t1 has none
     assert resp.json()["items"][0]["filename"] == "B_Movie.mkv"
     assert resp.json()["items"][1]["filename"] == "A_Movie.mkv"
+
+    # 5. Test sorting by status asc (FLAGGED_CORRUPT < FLAGGED_TITLE < VERIFIED)
+    resp = client.get("/api/files?sort_by=status&sort_order=asc")
+    statuses = [item["status"] for item in resp.json()["items"]]
+    assert statuses == ["FLAGGED_CORRUPT", "FLAGGED_TITLE", "VERIFIED"]
+
+    # 6. Test filtering by specific status FLAGGED_CORRUPT
+    resp = client.get("/api/files?status=FLAGGED_CORRUPT")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 1
+    assert resp.json()["items"][0]["filename"] == "B_Movie.mkv"
+
+    # 7. Test filtering by general FLAGGED
+    resp = client.get("/api/files?status=FLAGGED")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 2
 
 def test_export_files():
     from app.database import MediaFile, AuditResult

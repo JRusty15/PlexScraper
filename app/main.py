@@ -453,7 +453,7 @@ def get_files(
         
         # Apply filters
         if status:
-            if status.startswith("FLAGGED"):
+            if status == "FLAGGED":
                 query = query.filter(MediaFile.status.like("FLAGGED_%"))
             else:
                 query = query.filter(MediaFile.status == status)
@@ -535,6 +535,11 @@ def get_files(
                 query = query.order_by(MediaFile.filepath.asc())
             else:
                 query = query.order_by(MediaFile.filepath.desc())
+        elif sort_by == "status":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.status.asc())
+            else:
+                query = query.order_by(MediaFile.status.desc())
         else:
             # Default sorting by added_at
             if sort_order == "asc":
@@ -626,7 +631,7 @@ def export_files(
         
         # Apply filters
         if status:
-            if status.startswith("FLAGGED"):
+            if status == "FLAGGED":
                 query = query.filter(MediaFile.status.like("FLAGGED_%"))
             else:
                 query = query.filter(MediaFile.status == status)
@@ -688,6 +693,11 @@ def export_files(
                 query = query.order_by(MediaFile.filepath.asc())
             else:
                 query = query.order_by(MediaFile.filepath.desc())
+        elif sort_by == "status":
+            if sort_order == "asc":
+                query = query.order_by(MediaFile.status.asc())
+            else:
+                query = query.order_by(MediaFile.status.desc())
         else:
             if sort_order == "asc":
                 query = query.order_by(MediaFile.added_at.asc())
