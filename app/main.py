@@ -960,47 +960,7 @@ def manual_flag_file(file_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"File {media_file.filename} manually flagged."}
 
-@app.delete("/api/files/{file_id}")
-def delete_file(file_id: int, db: Session = Depends(get_db)):
-    """Deletes the physical file from the disk and removes it from the database."""
-    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-    if not media_file:
-        raise HTTPException(status_code=404, detail="File not found")
-        
-    filepath = Path(media_file.filepath)
-    
-    # Try deleting the physical file from disk
-    if filepath.exists():
-        try:
-            filepath.unlink()
-            logger.info(f"Successfully deleted physical file: {filepath}")
-        except Exception as e:
-            logger.error(f"Failed to delete physical file {filepath}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete physical file from disk: {str(e)}")
-    else:
-        logger.warning(f"Physical file not found on disk at {filepath}. Removing from database only.")
-        
-    # Clean up associated generated physical assets (keyframes/audio clips)
-    workspace_root_val = get_workspace_root()
-    kf_dir = workspace_root_val / "processed_media" / "keyframes"
-    audio_dir = workspace_root_val / "processed_media" / "audio"
-    
-    for folder, prefix in [(kf_dir, f"media_{file_id}_"), (audio_dir, f"media_{file_id}_")]:
-        if folder.exists():
-            for item in folder.iterdir():
-                if item.is_file() and item.name.startswith(prefix):
-                    try:
-                        item.unlink()
-                    except Exception as e:
-                        logger.error(f"Error removing cached file {item}: {e}")
-                        
-    # Clean up associated database entries (AuditJob, AuditResult)
-    db.query(AuditJob).filter(AuditJob.media_file_id == file_id).delete()
-    db.query(AuditResult).filter(AuditResult.media_file_id == file_id).delete()
-    db.delete(media_file)
-    db.commit()
-    
-    return {"message": f"Successfully deleted {media_file.filename} from disk and database."}
+
 
 def clean_physical_assets():
     # Remove physical files from keyframes and audio dirs
