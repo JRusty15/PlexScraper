@@ -12,6 +12,16 @@ class AIVerifier:
     def __init__(self, workspace_root: str = "."):
         self.workspace_root = Path(workspace_root)
 
+    def _as_bool(self, val) -> bool:
+        """Coerces standard inputs and string variations to boolean values."""
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ["true", "yes", "1", "y", "t"]
+        if isinstance(val, (int, float)):
+            return bool(val)
+        return False
+
     def _encode_image(self, image_rel_path: str) -> str:
         """Converts a relative web URL keyframe path back to local path and encodes to base64."""
         clean_path = image_rel_path.lstrip("/")
@@ -108,7 +118,8 @@ class AIVerifier:
             logger.info("Sending Stage 1 (Title Check) prompt with multiple images to Qwen2.5-VL...")
             title_resp = await self._query_ollama(prompt, images_b64)
             logger.info(f"Stage 1 Response: {title_resp}")
-            results["title_verified"] = title_resp.get("title_found", False) or title_resp.get("title_verified", False)
+            title_found = title_resp.get("title_found", False) or title_resp.get("title_verified", False)
+            results["title_verified"] = self._as_bool(title_found)
             results["raw_logs"].append({"stage": "title", "response": title_resp})
         except Exception as e:
             logger.error(f"Title VLM check failed: {e}")
@@ -127,7 +138,8 @@ class AIVerifier:
                 logger.info("Sending Stage 2 (Credits Check) prompt with multiple images to Qwen2.5-VL...")
                 credits_resp = await self._query_ollama(prompt, images_b64)
                 logger.info(f"Stage 2 Response: {credits_resp}")
-                results["credits_verified"] = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
+                credits_found = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
+                results["credits_verified"] = self._as_bool(credits_found)
                 results["raw_logs"].append({"stage": "credits", "response": credits_resp})
             elif keyframe_paths:
                 img_b64 = self._encode_image(keyframe_paths[-1])
@@ -139,7 +151,8 @@ class AIVerifier:
                 logger.info("Sending Stage 2 (Credits Check) prompt to Qwen2.5-VL...")
                 credits_resp = await self._query_ollama(prompt, img_b64)
                 logger.info(f"Stage 2 Response: {credits_resp}")
-                results["credits_verified"] = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
+                credits_found = credits_resp.get("credits_found", False) or credits_resp.get("credits_verified", False)
+                results["credits_verified"] = self._as_bool(credits_found)
                 results["raw_logs"].append({"stage": "credits", "response": credits_resp})
         except Exception as e:
             logger.error(f"Credits VLM check failed: {e}")
@@ -261,7 +274,8 @@ class AIVerifier:
                 logger.info("Sending Stage 3 (Sanity Check) prompt with multiple images to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, images_b64, chat_history=chat_history)
                 logger.info(f"Stage 3 Response: {sanity_resp}")
-                results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
+                sanity_passed = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
+                results["sanity_check_passed"] = self._as_bool(sanity_passed)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
             elif len(keyframe_paths) >= 3:
                 img_b64 = self._encode_image(keyframe_paths[len(keyframe_paths)//2])
@@ -282,7 +296,8 @@ class AIVerifier:
                 logger.info("Sending Stage 3 (Sanity Check) prompt to Qwen2.5-VL...")
                 sanity_resp = await self._query_ollama(prompt, img_b64, chat_history=chat_history)
                 logger.info(f"Stage 3 Response: {sanity_resp}")
-                results["sanity_check_passed"] = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
+                sanity_passed = sanity_resp.get("content_matches", False) or sanity_resp.get("sanity_check_passed", False)
+                results["sanity_check_passed"] = self._as_bool(sanity_passed)
                 results["raw_logs"].append({"stage": "sanity", "response": sanity_resp})
         except Exception as e:
             logger.error(f"Sanity check VLM failed: {e}")
@@ -328,24 +343,45 @@ class AIVerifier:
             
             # Attempt to extract JSON from the response text
             try:
-                # If wrapped in markdown blocks, strip them
-                if content.startswith("```json"):
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif content.startswith("```"):
-                    content = content.split("```")[1].split("```")[0].strip()
+                # Find the first '{' and last '}' to extract the JSON block robustly
+                start_idx = content.find('{')
+                end_idx = content.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    json_str = content[start_idx:end_idx+1]
+                    return json.loads(json_str)
                 return json.loads(content)
             except Exception:
                 # Fallback to simple regex/text detection if it is not valid JSON
                 logger.warning(f"Could not parse VLM response as JSON: {content}")
                 lower_content = content.lower()
+                import re
                 
-                # Check for positive/negative keywords based on prompt target
-                is_positive = any(word in lower_content for word in ["yes", "true", "found", "verified", "matches", "present"])
+                # Check for "content_matches"
+                matches_match = re.search(r'content_matches\s*[:=]?\s*(true|false|yes|no)', lower_content)
+                if matches_match:
+                    content_matches = matches_match.group(1) in ["true", "yes"]
+                else:
+                    content_matches = any(word in lower_content for word in ["yes", "true", "matches", "present"]) and not any(neg in lower_content for neg in ["not", "no", "false", "fail"])
+
+                # Check for "title_found" or "title_verified"
+                title_match = re.search(r'title_(found|verified)\s*[:=]?\s*(true|false|yes|no)', lower_content)
+                if title_match:
+                    title_found = title_match.group(2) in ["true", "yes"]
+                else:
+                    title_found = any(word in lower_content for word in ["yes", "true", "found", "verified"]) and not any(neg in lower_content for neg in ["not", "no", "false", "fail"])
+
+                # Check for "credits_found" or "credits_verified"
+                credits_match = re.search(r'credits_(found|verified)\s*[:=]?\s*(true|false|yes|no)', lower_content)
+                if credits_match:
+                    credits_found = credits_match.group(2) in ["true", "yes"]
+                else:
+                    credits_found = any(word in lower_content for word in ["yes", "true", "found", "verified"]) and not any(neg in lower_content for neg in ["not", "no", "false", "fail"])
+
                 return {
                     "raw_text_fallback": content,
-                    "title_found": is_positive,
-                    "credits_found": is_positive,
-                    "content_matches": is_positive,
+                    "title_found": title_found,
+                    "credits_found": credits_found,
+                    "content_matches": content_matches,
                     "confidence": 0.5,
                     "reason": content[:200]
                 }
@@ -412,8 +448,9 @@ class AIVerifier:
         
         try:
             resp = await self._query_ollama(prompt, [])
+            matched_val = resp.get("matched", False) or resp.get("title_found", False)
             return {
-                "matched": resp.get("matched", False) or resp.get("title_found", False),
+                "matched": self._as_bool(matched_val),
                 "reason": resp.get("reason", "Dialogue evaluation completed.")
             }
         except Exception as e:
@@ -480,8 +517,9 @@ class AIVerifier:
             )
             
             resp = await self._query_ollama(prompt, images_b64)
+            matched_val = resp.get("matched", False) or resp.get("content_matches", False)
             return {
-                "matched": resp.get("matched", False) or resp.get("content_matches", False),
+                "matched": self._as_bool(matched_val),
                 "reason": resp.get("reason", "VLM dense check did not return a reason.")
             }
         except Exception as e:
