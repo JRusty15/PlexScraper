@@ -352,9 +352,10 @@ def test_worker_start_resets_stale_jobs():
 
 def test_run_throttled_process_timeout():
     import pytest
+    import sys
     from app.media_processor import run_throttled_process
     
-    cmd = ["sleep", "10"]
+    cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
     
     with pytest.raises(TimeoutError) as exc_info:
         run_throttled_process(cmd, timeout=1)
@@ -597,5 +598,47 @@ def test_enrich_plex_metadata(monkeypatch):
     assert f2_db.expected_duration == 5400.0
     assert f2_db.plex_rating_key == "rating_222"
     db_verify.close()
+
+
+def test_search_multi_keyword_and_fields():
+    from app.database import MediaFile
+    db = TestingSessionLocal()
+    
+    # Clean previous records
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create records with distinct filenames, paths, and titles
+    f1 = MediaFile(filepath="/media/tv/Bobs Burgers/Season 1/Bobs.Burgers.S01E01.mkv", filename="Bobs.Burgers.S01E01.mkv", title="Human Flesh", status=FileStatus.PENDING)
+    f2 = MediaFile(filepath="/media/tv/Archer/Season 1/Archer.S01E01.mkv", filename="Archer.S01E01.mkv", title="Mole Hunt", status=FileStatus.PENDING)
+    f3 = MediaFile(filepath="/media/movies/Burgers_Movie.mkv", filename="Burgers_Movie.mkv", title="The Great Burger Movie", status=FileStatus.PENDING)
+    
+    db.add_all([f1, f2, f3])
+    db.commit()
+    db.close()
+    
+    # Test 1: Single keyword matching filepath & filename
+    resp = client.get("/api/files?search=Bobs")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 1
+    assert resp.json()["items"][0]["filename"] == "Bobs.Burgers.S01E01.mkv"
+    
+    # Test 2: Multi-keyword matching across different folders/filenames
+    resp = client.get("/api/files?search=Bobs Burgers")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 1
+    assert resp.json()["items"][0]["filename"] == "Bobs.Burgers.S01E01.mkv"
+    
+    # Test 3: Keyword matching title specifically
+    resp = client.get("/api/files?search=Flesh")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 1
+    assert resp.json()["items"][0]["title"] == "Human Flesh"
+
+    # Test 4: Keyword "Burgers" matches f1 and f3
+    resp = client.get("/api/files?search=Burgers")
+    assert resp.status_code == 200
+    assert resp.json()["total_items"] == 2
+
 
 

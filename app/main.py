@@ -476,7 +476,13 @@ def get_files(
                 )
                 
         if search:
-            query = query.filter(MediaFile.filename.like(f"%{search}%"))
+            keywords = [k.strip() for k in search.split() if k.strip()]
+            for keyword in keywords:
+                query = query.filter(
+                    MediaFile.filename.like(f"%{keyword}%") |
+                    MediaFile.filepath.like(f"%{keyword}%") |
+                    MediaFile.title.like(f"%{keyword}%")
+                )
             
         # Get total count for UI pagination details
         total_count = query.count()
@@ -654,7 +660,13 @@ def export_files(
                 )
                 
         if search:
-            query = query.filter(MediaFile.filename.like(f"%{search}%"))
+            keywords = [k.strip() for k in search.split() if k.strip()]
+            for keyword in keywords:
+                query = query.filter(
+                    MediaFile.filename.like(f"%{keyword}%") |
+                    MediaFile.filepath.like(f"%{keyword}%") |
+                    MediaFile.title.like(f"%{keyword}%")
+                )
             
         # Apply Sorting
         if sort_by == "confidence":

@@ -83,7 +83,10 @@
                 <div class="card-header">
                     <h2>Media Inventory & Audit Logs</h2>
                     <div class="filters">
-                        <input type="text" id="search-input" placeholder="Search files..." oninput="triggerSearch()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem;">
+                        <div class="search-container">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="search-input" placeholder="Search files, shows, or paths..." oninput="triggerSearch()">
+                        </div>
                         
                         <select id="source-filter" onchange="changeSourceFilter()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; outline: none; margin-right: 0.5rem; cursor: pointer; height: 32px; box-sizing: border-box;">
                             <option value="all" style="background: var(--bg-base);">All Sources</option>
