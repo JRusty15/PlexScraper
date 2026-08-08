@@ -110,6 +110,9 @@
                         <button id="btn-export" class="btn btn-secondary btn-sm" onclick="exportSnapshot()" style="padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: var(--text-primary); margin-left: 0.5rem;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
                             <span>📥</span> Export Snapshot
                         </button>
+                        <button id="btn-requeue-filtered" class="btn btn-warning btn-sm" onclick="requeueFiltered()" style="padding: 0.4rem 0.8rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; border: 1px solid var(--border-color); background: rgba(245, 158, 11, 0.15); color: var(--warning); margin-left: 0.5rem;" onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'" onmouseout="this.style.background='rgba(245, 158, 11, 0.15)'">
+                            <span>🔄</span> Requeue Filtered
+                        </button>
                     </div>
                 </div>
 
@@ -485,6 +488,49 @@
                 url += `&search=${encodeURIComponent(currentSearchQuery)}`;
             }
             window.location.href = url;
+        }
+
+        async function requeueFiltered() {
+            let filterDesc = [];
+            if (currentSourceFilter !== 'all') filterDesc.push(`source: ${currentSourceFilter}`);
+            if (currentStatusFilter !== 'all') filterDesc.push(`status: ${currentStatusFilter}`);
+            if (currentSearchQuery) filterDesc.push(`search: "${currentSearchQuery}"`);
+            
+            const desc = filterDesc.length > 0 ? filterDesc.join(', ') : 'ALL files';
+            
+            if (!confirm(`Are you sure you want to requeue all files matching the current criteria (${desc})?`)) {
+                return;
+            }
+            
+            const btn = document.getElementById('btn-requeue-filtered');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `<span class="spinner-btn"></span> Queuing...`;
+            btn.disabled = true;
+            
+            try {
+                let url = `/api/pipeline/requeue-bulk?`;
+                const params = new URLSearchParams();
+                if (currentStatusFilter !== 'all') params.set('status', currentStatusFilter);
+                if (currentSourceFilter !== 'all') params.set('source_path', currentSourceFilter);
+                if (currentSearchQuery) params.set('search', currentSearchQuery);
+                url += params.toString();
+                
+                const response = await fetch(url, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(data.message || "Bulk requeue completed successfully.", 'success');
+                    await fetchFiles(true);
+                    await fetchStatus();
+                } else {
+                    showToast(data.detail || "Failed to bulk requeue files.", 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to bulk requeue files.", 'error');
+            } finally {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
         }
 
         async function fetchStatus() {

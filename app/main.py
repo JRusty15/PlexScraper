@@ -864,6 +864,78 @@ def requeue_by_status(status: str, db: Session = Depends(get_db)):
     worker.start()
     return {"message": f"Successfully requeued {count} files in status '{status}'."}
 
+@app.post("/api/pipeline/requeue-bulk")
+def requeue_bulk(
+    status: str | None = None,
+    source_path: str | None = None,
+    search: str | None = None,
+    db: Session = Depends(get_db)
+):
+    """Bulk resets the status of all files matching specified filters and adds them to the queue."""
+    try:
+        query = db.query(MediaFile)
+        
+        # Apply filters in exactly the same way as get_files
+        if status:
+            if status == "FLAGGED":
+                query = query.filter(MediaFile.status.like("FLAGGED_%"))
+            else:
+                query = query.filter(MediaFile.status == status)
+                
+        if source_path:
+            sp_lower = source_path.lower()
+            if sp_lower == "movies":
+                query = query.filter(
+                    (MediaFile.media_type == "movie") | 
+                    (MediaFile.filepath.like("%movies%")) | 
+                    (MediaFile.filepath.like("%Movies%"))
+                )
+            elif sp_lower == "tv":
+                query = query.filter(
+                    (MediaFile.media_type == "episode") | 
+                    (MediaFile.filepath.like("%tv%")) | 
+                    (MediaFile.filepath.like("%TV%")) |
+                    (MediaFile.filepath.like("%show%")) |
+                    (MediaFile.filepath.like("%Show%"))
+                )
+                
+        if search:
+            keywords = [k.strip() for k in search.split() if k.strip()]
+            for keyword in keywords:
+                query = query.filter(
+                    MediaFile.filename.like(f"%{keyword}%") |
+                    MediaFile.filepath.like(f"%{keyword}%") |
+                    MediaFile.title.like(f"%{keyword}%")
+                )
+                
+        files = query.all()
+        if not files:
+            return {"message": "No matching files found to requeue."}
+            
+        count = 0
+        for f in files:
+            # Delete any existing pending job to avoid duplicate queues
+            db.query(AuditJob).filter(
+                AuditJob.media_file_id == f.id,
+                AuditJob.status == JobStatus.PENDING
+            ).delete()
+            
+            f.status = FileStatus.PENDING
+            job = AuditJob(
+                media_file_id=f.id,
+                status=JobStatus.PENDING
+            )
+            db.add(job)
+            count += 1
+            
+        db.commit()
+        worker.start()
+        return {"message": f"Successfully requeued {count} files matching criteria."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in bulk requeue: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 def save_vlm_feedback(workspace_root: str, media_file: MediaFile, result: AuditResult):
     """Saves a corrected VLM audit example as a few-shot feedback item."""
     import json

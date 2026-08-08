@@ -641,4 +641,67 @@ def test_search_multi_keyword_and_fields():
     assert resp.json()["total_items"] == 2
 
 
+def test_requeue_bulk_endpoint():
+    from app.database import MediaFile, AuditJob, JobStatus, FileStatus
+    db = TestingSessionLocal()
+    
+    # Clean previous records
+    db.query(AuditJob).delete()
+    db.query(MediaFile).delete()
+    db.commit()
+    
+    # Create movies and tv shows records with different statuses
+    m1 = MediaFile(filepath="/media/Movies/A_Movie.mkv", filename="A_Movie.mkv", media_type="movie", status=FileStatus.VERIFIED)
+    m2 = MediaFile(filepath="/media/Movies/B_Movie.mkv", filename="B_Movie.mkv", media_type="movie", status=FileStatus.FLAGGED_TITLE)
+    t1 = MediaFile(filepath="/media/TV/Show_A/S01E01.mkv", filename="S01E01.mkv", media_type="episode", status=FileStatus.VERIFIED)
+    t2 = MediaFile(filepath="/media/TV/Show_A/S01E02.mkv", filename="S01E02.mkv", media_type="episode", status=FileStatus.FLAGGED_DURATION)
+    
+    db.add_all([m1, m2, t1, t2])
+    db.commit()
+    db.close()
+    
+    # Test 1: Requeue by source_path=movies only
+    resp = client.post("/api/pipeline/requeue-bulk?source_path=movies")
+    assert resp.status_code == 200
+    assert "Successfully requeued 2 files" in resp.json()["message"]
+    
+    db_verify = TestingSessionLocal()
+    m1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "A_Movie.mkv").first()
+    t1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "S01E01.mkv").first()
+    assert m1_db.status == FileStatus.PENDING
+    assert t1_db.status == FileStatus.VERIFIED  # untouched
+    db_verify.close()
+    
+    # Test 2: Requeue by source_path=tv and status=FLAGGED_DURATION
+    resp = client.post("/api/pipeline/requeue-bulk?source_path=tv&status=FLAGGED_DURATION")
+    assert resp.status_code == 200
+    assert "Successfully requeued 1 files" in resp.json()["message"]
+    
+    db_verify = TestingSessionLocal()
+    t2_db = db_verify.query(MediaFile).filter(MediaFile.filename == "S01E02.mkv").first()
+    t1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "S01E01.mkv").first()
+    assert t2_db.status == FileStatus.PENDING
+    assert t1_db.status == FileStatus.VERIFIED  # still untouched
+    db_verify.close()
+    
+    # Test 3: Requeue by search query (e.g. search keyword "Show")
+    db = TestingSessionLocal()
+    m1_ref = db.query(MediaFile).filter(MediaFile.filename == "A_Movie.mkv").first()
+    m1_ref.status = FileStatus.VERIFIED
+    db.commit()
+    db.close()
+    
+    resp = client.post("/api/pipeline/requeue-bulk?search=Show_A")
+    assert resp.status_code == 200
+    assert "Successfully requeued 2 files" in resp.json()["message"]
+    
+    db_verify = TestingSessionLocal()
+    m1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "A_Movie.mkv").first()
+    t1_db = db_verify.query(MediaFile).filter(MediaFile.filename == "S01E01.mkv").first()
+    assert m1_db.status == FileStatus.VERIFIED  # untouched
+    assert t1_db.status == FileStatus.PENDING
+    db_verify.close()
+
+
+
 
